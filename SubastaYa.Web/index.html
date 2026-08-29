@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubastaYa - En Vivo</title>
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-light">
+    <!-- Navbar Estética -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark-blue shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
+                <span class="fs-4 me-2">⚖️</span> SubastaYa
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto fw-medium">
+                    <li class="nav-item"><a class="nav-link active" href="#">Catálogo</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#">Mi Billetera</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#">Publicar Subasta</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container my-5">
+        <div class="text-center mb-5">
+            <h1 class="fw-bolder text-dark">Subastas en Tiempo Real</h1>
+            <p class="text-muted fs-5">Descubre oportunidades únicas y asegura tu compra con nuestra garantía Escrow.</p>
+        </div>
+
+        <!-- Contenedor dinámico -->
+        <div class="row g-4" id="auctions-container">
+            <!-- Spinner de carga inicial -->
+            <div class="text-center w-100 py-5" id="loading-spinner">
+                <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Cargando subastas...</span>
+                </div>
+                <p class="mt-3 text-muted">Conectando con el servidor...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
