@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SubastaYa.API.Data;
 
@@ -11,9 +12,11 @@ using SubastaYa.API.Data;
 namespace SubastaYa.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901023704_AddWalletLedger")]
+    partial class AddWalletLedger
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -54,14 +57,7 @@ namespace SubastaYa.API.Migrations
                     b.HasIndex("UsuarioId")
                         .IsUnique();
 
-                    b.ToTable("Billeteras", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_Billeteras_RetenidoNoSuperaTotal", "[SaldoRetenido] <= [SaldoTotal]");
-
-                            t.HasCheckConstraint("CK_Billeteras_SaldoDisponibleConsistente", "[SaldoDisponible] = [SaldoTotal] - [SaldoRetenido]");
-
-                            t.HasCheckConstraint("CK_Billeteras_SaldosNoNegativos", "[SaldoTotal] >= 0 AND [SaldoRetenido] >= 0 AND [SaldoDisponible] >= 0");
-                        });
+                    b.ToTable("Billeteras", (string)null);
                 });
 
             modelBuilder.Entity("SubastaYa.API.Models.Subasta", b =>
