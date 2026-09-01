@@ -11,8 +11,16 @@ public sealed class Subasta
     [MaxLength(150)]
     public string Titulo { get; set; } = string.Empty;
 
+    [Required]
     [MaxLength(2_000)]
-    public string? Descripcion { get; set; }
+    public string? Descripcion { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? ImagenUrl { get; set; }
+
+    [Required]
+    [MaxLength(100)]
+    public string Categoria {  get; set; } = string.Empty;
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrecioInicial { get; set; }
@@ -20,11 +28,14 @@ public sealed class Subasta
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrecioActual { get; set; }
 
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal IncrementoMinimo {  get; set; }
+
     public DateTimeOffset FechaInicioUtc { get; set; }
 
     public DateTimeOffset FechaFinUtc { get; set; }
 
-    public bool Activa { get; set; } = true;
+    public EstadoSubasta Estado {  get; set; }
 
     // SQL Server genera un nuevo valor en cada INSERT o UPDATE.
     [Timestamp]
