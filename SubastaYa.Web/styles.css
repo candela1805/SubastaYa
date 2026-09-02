@@ -82,3 +82,50 @@ body {
 .btn-puja:hover {
     background-color: #0b5ed7;
 }
+
+html {
+    scroll-behavior: smooth;
+}
+
+/* Módulo 2: Formulario para publicar subastas */
+.publish-section {
+    scroll-margin-top: 1.5rem;
+}
+
+.publish-card {
+    border: 1px solid rgba(26, 37, 47, 0.08);
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.publish-intro {
+    color: #ffffff;
+    background: linear-gradient(145deg, #1a252f 0%, #0d6efd 100%);
+}
+
+.publish-icon {
+    display: inline-grid;
+    width: 3.5rem;
+    height: 3.5rem;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 1.65rem;
+}
+
+#auction-form .form-control,
+#auction-form .form-select,
+#auction-form .input-group-text {
+    min-height: 46px;
+}
+
+#auction-form textarea.form-control {
+    min-height: 112px;
+}
+
+#auction-form .form-control:focus,
+#auction-form .form-select:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.14);
+}

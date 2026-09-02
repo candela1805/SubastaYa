@@ -3,6 +3,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     // Inicializar la aplicación cargando el catálogo
     fetchAuctions();
+    initializeAuctionForm();
 });
 
 /**
@@ -139,4 +140,112 @@ function enterLiveRoom(auctionId) {
         auctionId +
         "\n(Acá iría el Módulo 3)"
     );
+}
+
+/**
+ * Módulo 2: Crear Subasta.
+ * Valida el formulario en el navegador. El envío REST queda pendiente del
+ * endpoint POST /api/auctions asignado al módulo de API.
+ */
+function initializeAuctionForm() {
+    const form = document.getElementById("auction-form");
+
+    if (!form) {
+        return;
+    }
+
+    const startInput = document.getElementById("auction-start");
+    const endInput = document.getElementById("auction-end");
+    const basePriceInput = document.getElementById("auction-base-price");
+    const incrementInput = document.getElementById("auction-minimum-increment");
+    const message = document.getElementById("auction-form-message");
+    const minimumDate = toDateTimeLocalValue(new Date());
+
+    startInput.min = minimumDate;
+    endInput.min = minimumDate;
+
+    const validateDateRange = () => {
+        endInput.setCustomValidity("");
+
+        if (!startInput.value || !endInput.value) {
+            return;
+        }
+
+        const startDate = new Date(startInput.value);
+        const endDate = new Date(endInput.value);
+
+        if (endDate <= startDate) {
+            endInput.setCustomValidity("La fecha de finalización debe ser posterior a la fecha de inicio.");
+        }
+    };
+
+    const validatePositiveNumber = input => {
+        input.setCustomValidity("");
+
+        if (input.value === "") {
+            return;
+        }
+
+        const value = Number(input.value);
+        if (!Number.isFinite(value) || value <= 0) {
+            input.setCustomValidity("El valor debe ser mayor que cero.");
+        }
+    };
+
+    startInput.addEventListener("change", () => {
+        endInput.min = startInput.value || minimumDate;
+        validateDateRange();
+    });
+
+    endInput.addEventListener("change", validateDateRange);
+    basePriceInput.addEventListener("input", () => validatePositiveNumber(basePriceInput));
+    incrementInput.addEventListener("input", () => validatePositiveNumber(incrementInput));
+
+    form.addEventListener("submit", event => {
+        event.preventDefault();
+
+        validateDateRange();
+        validatePositiveNumber(basePriceInput);
+        validatePositiveNumber(incrementInput);
+        form.classList.add("was-validated");
+
+        if (!form.checkValidity()) {
+            showAuctionFormMessage(
+                message,
+                "Revisá los campos marcados antes de publicar la subasta.",
+                "danger"
+            );
+            form.querySelector(":invalid")?.focus();
+            return;
+        }
+
+        showAuctionFormMessage(
+            message,
+            "La subasta pasó todas las validaciones. Quedó lista para enviarse cuando el endpoint de publicación esté disponible.",
+            "success"
+        );
+    });
+
+    form.addEventListener("reset", () => {
+        window.setTimeout(() => {
+            form.classList.remove("was-validated");
+            startInput.setCustomValidity("");
+            endInput.setCustomValidity("");
+            basePriceInput.setCustomValidity("");
+            incrementInput.setCustomValidity("");
+            endInput.min = minimumDate;
+            message.className = "alert d-none";
+            message.textContent = "";
+        }, 0);
+    });
+}
+
+function showAuctionFormMessage(element, text, type) {
+    element.textContent = text;
+    element.className = `alert alert-${type}`;
+}
+
+function toDateTimeLocalValue(date) {
+    const timezoneOffset = date.getTimezoneOffset() * 60_000;
+    return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
 }
