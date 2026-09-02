@@ -1,14 +1,23 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
-namespace SubastaYa.API.Models
+namespace SubastaYa.API.Models;
+public sealed class Usuario
 {
-    public class Usuario
-    {
-        [Key]
-        public int Id { get; set; }
-        public string Email { get; set; } = string.Empty;
-        public string Nombre { get; set; } = string.Empty;
-        public string PasswordHash { get; set; } = string.Empty;
-        public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
-    }
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required]
+    [MaxLength(150)]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(100)]
+    public string Nombre { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(500)]
+    public string PasswordHash { get; set; } = string.Empty;
+
+    public DateTimeOffset FechaRegistro { get; set; } = DateTimeOffset.UtcNow;
+
+    public Billetera? Billetera { get; set; }
 }

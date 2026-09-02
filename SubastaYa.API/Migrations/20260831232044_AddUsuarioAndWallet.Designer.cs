@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SubastaYa.API.Data;
 
@@ -11,9 +12,11 @@ using SubastaYa.API.Data;
 namespace SubastaYa.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831232044_AddUsuarioAndWallet")]
+    partial class AddUsuarioAndWallet
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -54,14 +57,7 @@ namespace SubastaYa.API.Migrations
                     b.HasIndex("UsuarioId")
                         .IsUnique();
 
-                    b.ToTable("Billeteras", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_Billeteras_RetenidoNoSuperaTotal", "[SaldoRetenido] <= [SaldoTotal]");
-
-                            t.HasCheckConstraint("CK_Billeteras_SaldoDisponibleConsistente", "[SaldoDisponible] = [SaldoTotal] - [SaldoRetenido]");
-
-                            t.HasCheckConstraint("CK_Billeteras_SaldosNoNegativos", "[SaldoTotal] >= 0 AND [SaldoRetenido] >= 0 AND [SaldoDisponible] >= 0");
-                        });
+                    b.ToTable("Billeteras", (string)null);
                 });
 
             modelBuilder.Entity("SubastaYa.API.Models.Subasta", b =>
@@ -131,41 +127,6 @@ namespace SubastaYa.API.Migrations
                     b.ToTable("Subastas", (string)null);
                 });
 
-            modelBuilder.Entity("SubastaYa.API.Models.TransaccionLedger", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("BilleteraId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Descripcion")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<DateTimeOffset>("FechaUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<decimal>("Monto")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Tipo")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BilleteraId");
-
-                    b.HasIndex("FechaUtc");
-
-                    b.ToTable("TransaccionesLedger", (string)null);
-                });
-
             modelBuilder.Entity("SubastaYa.API.Models.Usuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -207,17 +168,6 @@ namespace SubastaYa.API.Migrations
                         .IsRequired();
 
                     b.Navigation("Usuario");
-                });
-
-            modelBuilder.Entity("SubastaYa.API.Models.TransaccionLedger", b =>
-                {
-                    b.HasOne("SubastaYa.API.Models.Billetera", "Billetera")
-                        .WithMany()
-                        .HasForeignKey("BilleteraId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Billetera");
                 });
 
             modelBuilder.Entity("SubastaYa.API.Models.Usuario", b =>

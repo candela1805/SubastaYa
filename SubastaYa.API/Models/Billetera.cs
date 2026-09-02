@@ -1,27 +1,26 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models
+namespace SubastaYa.API.Models;
+public sealed class Billetera
 {
-    public class Billetera
-    {
-        [Key]
-        public int Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
 
-        [Required]
-        public int UsuarioId { get; set; }
+    public Guid UsuarioId { get; set; }
 
-        public decimal SaldoTotal { get; set; } = 0;
+    public Usuario Usuario { get; set; } = null!;
 
-        public decimal SaldoRetenido { get; set; } = 0;
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal SaldoTotal { get; set; }
 
-        // Regla de Negocio: Único dinero disponible para nuevas pujas o retiros.
-        // No se guarda en la BD, EF Core lo calcula en memoria.
-        [NotMapped]
-        public decimal SaldoDisponible => SaldoTotal - SaldoRetenido;
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal SaldoRetenido {  get; set; }
 
-        // Para Optimistic Locking (Concurrencia)
-        [Timestamp]
-        public byte[] Version { get; set; } = Array.Empty<byte>();
-    }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal SaldoDisponible { get; set; }
+    
+    [Timestamp]
+    public byte[] Version { get; set; } = Array.Empty<byte>();
+
+    
 }

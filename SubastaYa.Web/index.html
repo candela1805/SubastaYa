@@ -1,193 +1,71 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SubastaYa - En Vivo</title>
-    <!-- Bootstrap 5 CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SubastaYa</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-light">
-    <!-- Navbar Estética -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark-blue shadow-sm">
-        <div class="container">
-            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
-                <span class="fs-4 me-2">⚖️</span> SubastaYa
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto fw-medium">
-                    <li class="nav-item"><a class="nav-link active" href="#catalog-section" aria-current="page">Catálogo</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#">Mi Billetera</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#publish-section">Publicar Subasta</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+<body>
+<nav class="navbar navbar-expand-lg app-navbar"><div class="container app-container">
+  <a class="navbar-brand" href="#catalog" data-view="catalog"><span class="brand-mark">⚖️</span> SubastaYa</a>
+  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-label="Abrir navegación"><span class="navbar-toggler-icon"></span></button>
+  <div class="collapse navbar-collapse" id="navbarNav">
+    <ul class="navbar-nav main-nav mx-auto"><li><a class="nav-link active" href="#catalog" data-view="catalog">Catálogo</a></li><li><a class="nav-link" href="#activities" data-view="activities">Mis Actividades</a></li><li><a class="nav-link" href="#wallet" data-view="wallet">Mi Billetera</a></li></ul>
+    <div class="user-area">
+      <button class="notification-button" type="button" aria-label="Notificaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
+      <button class="user-button" type="button" aria-label="Usuario"><span class="avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"/></svg></span><span>Usuario</span><span aria-hidden="true">⌄</span></button>
+    </div>
+  </div>
+</div></nav>
+<main>
+  <section class="app-view active" data-page="catalog"><div class="container app-container catalog-page">
+    <header class="page-heading text-center"><h1>Subastas en Tiempo Real</h1><p>Descubre oportunidades únicas y asegura tu compra con nuestra garantía Escrow.</p></header>
+    <form class="filter-panel" id="auction-filters">
+      <label class="search-field"><span>⌕</span><input type="search" placeholder="Buscar por título..." aria-label="Buscar por título"></label>
+      <label class="filter-field"><span>Estado</span><select><option>Todas</option><option>Activa</option><option>Programada</option><option>Finalizada</option><option>Desierta</option></select></label>
+      <label class="filter-field"><span>Categoría</span><select><option>Todas</option><option>Tecnología</option><option>Hogar y Oficina</option></select></label>
+      <label class="filter-field"><span>Precio mín.</span><input type="number" min="0" placeholder="$ Mínimo"></label>
+      <label class="filter-field"><span>Precio máx.</span><input type="number" min="0" placeholder="$ Máximo"></label>
+      <label class="filter-field"><span>Ordenar por</span><select><option>Tiempo restante</option><option>Mayor precio</option><option>Menor precio</option></select></label>
+      <button class="clear-button" type="reset">⌁&nbsp; Limpiar filtros</button>
+    </form>
+    <div class="row g-4" id="auctions-container"></div>
+    <nav class="pagination-wrap" aria-label="Paginación"><button class="active">1</button><button>2</button><button>3</button><span>…</span><button>10</button><button aria-label="Siguiente">›</button></nav>
+  </div></section>
 
-    <!-- Main Content -->
-    <main class="container my-5">
-        <section id="catalog-section">
-            <div class="text-center mb-5">
-                <h1 class="fw-bolder text-dark">Subastas en Tiempo Real</h1>
-                <p class="text-muted fs-5">Descubre oportunidades únicas y asegura tu compra con nuestra garantía Escrow.</p>
-            </div>
+  <section class="app-view" data-page="wallet"><div class="workspace-layout">
+    <aside class="side-panel"><h2>Mi Billetera</h2><nav class="side-nav"><a class="active" href="#wallet">▣ Resumen</a><a href="#wallet">♨ Depositar fondos</a><a href="#wallet">☷ Movimientos</a><a href="#wallet">▣ Fondos retenidos</a><a href="#wallet">▭ Métodos de pago</a><a href="#wallet">⚙ Configuración</a></nav></aside>
+    <div class="workspace-content"><h1 class="section-title">Resumen de Saldo</h1>
+      <div class="balance-grid">
+        <article class="balance-card total-card"><div><span>Saldo Total</span><strong id="wallet-total">$ —</strong><small>Total en tu billetera</small></div><b>▣</b></article>
+        <article class="balance-card retained-card"><div><span>Saldo Retenido</span><strong id="wallet-retained">$ —</strong><small>Fondos en garantía</small></div><b>▢</b></article>
+        <article class="balance-card available-card"><div><span>Saldo Disponible</span><strong id="wallet-available">$ —</strong><small>Disponible para usar</small></div><b>✓</b></article>
+      </div>
+      <div class="wallet-panels">
+        <article class="content-card"><h2>Depósito rápido</h2><p>Agregar fondos a tu billetera</p>
+          <div class="amount-options"><button data-amount="10000">$10.000</button><button data-amount="20000">$20.000</button><button data-amount="50000">$50.000</button><button data-amount="100000">$100.000</button><button data-amount="">Otro</button></div>
+          <label class="deposit-input"><span>$</span><input id="deposit-amount" type="number" min="1" placeholder="0" aria-label="Monto a depositar"></label>
+          <button id="deposit-button" class="primary-action" disabled>▣&nbsp; Depositar fondos</button><small class="integration-note">Se habilitará al integrar la billetera con la API.</small>
+        </article>
+        <article class="content-card"><div class="card-heading"><div><h2>Últimos movimientos</h2><p>Actividad reciente de tu billetera</p></div><button disabled>Ver todos</button></div>
+          <div id="wallet-movements" class="empty-state"><i>☷</i><strong>Sin movimientos para mostrar</strong><p>Los movimientos aparecerán al conectar el historial de la billetera.</p></div>
+        </article>
+      </div>
+    </div>
+  </div></section>
 
-            <!-- Contenedor dinámico -->
-            <div class="row g-4" id="auctions-container">
-                <!-- Spinner de carga inicial -->
-                <div class="text-center w-100 py-5" id="loading-spinner">
-                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
-                        <span class="visually-hidden">Cargando subastas...</span>
-                    </div>
-                    <p class="mt-3 text-muted">Conectando con el servidor...</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- Módulo 2: Crear Subasta -->
-        <section id="publish-section" class="publish-section pt-5" aria-labelledby="publish-title">
-            <div class="publish-card shadow-sm">
-                <div class="row g-0">
-                    <div class="col-lg-4 publish-intro p-4 p-lg-5">
-                        <span class="publish-icon" aria-hidden="true">🔨</span>
-                        <h2 id="publish-title" class="h3 fw-bold mt-3">Publicá tu subasta</h2>
-                        <p class="mb-0 opacity-75">
-                            Definí los datos del producto, el precio inicial y la ventana de tiempo para recibir pujas.
-                        </p>
-                    </div>
-
-                    <div class="col-lg-8 bg-white p-4 p-lg-5">
-                        <div id="auction-form-message" class="alert d-none" role="status" aria-live="polite"></div>
-
-                        <form id="auction-form" novalidate>
-                            <div class="row g-3">
-                                <div class="col-12">
-                                    <label for="auction-title" class="form-label fw-semibold">Título del producto</label>
-                                    <input
-                                        id="auction-title"
-                                        name="titulo"
-                                        class="form-control"
-                                        type="text"
-                                        maxlength="150"
-                                        placeholder="Ej.: Notebook Lenovo ThinkPad"
-                                        required
-                                    >
-                                    <div class="invalid-feedback">Ingresá un título para la subasta.</div>
-                                </div>
-
-                                <div class="col-12">
-                                    <label for="auction-description" class="form-label fw-semibold">Descripción</label>
-                                    <textarea
-                                        id="auction-description"
-                                        name="descripcion"
-                                        class="form-control"
-                                        rows="4"
-                                        maxlength="2000"
-                                        placeholder="Describí el estado, características y condiciones del producto."
-                                    ></textarea>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-category" class="form-label fw-semibold">Categoría</label>
-                                    <select id="auction-category" name="categoriaId" class="form-select" required>
-                                        <option value="" selected disabled>Seleccioná una categoría</option>
-                                        <option value="1">Tecnología</option>
-                                        <option value="2">Coleccionables</option>
-                                        <option value="3">Indumentaria</option>
-                                        <option value="4">Vehículos</option>
-                                    </select>
-                                    <div class="invalid-feedback">Seleccioná una categoría.</div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-image" class="form-label fw-semibold">URL de imagen</label>
-                                    <input
-                                        id="auction-image"
-                                        name="urlImagen"
-                                        class="form-control"
-                                        type="url"
-                                        placeholder="https://ejemplo.com/producto.jpg"
-                                    >
-                                    <div class="invalid-feedback">Ingresá una URL válida.</div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-base-price" class="form-label fw-semibold">Precio base</label>
-                                    <div class="input-group has-validation">
-                                        <span class="input-group-text">$</span>
-                                        <input
-                                            id="auction-base-price"
-                                            name="precioBase"
-                                            class="form-control"
-                                            type="number"
-                                            min="0.01"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            required
-                                        >
-                                        <div class="invalid-feedback">El precio base debe ser mayor que cero.</div>
-                                    </div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-minimum-increment" class="form-label fw-semibold">Incremento mínimo</label>
-                                    <div class="input-group has-validation">
-                                        <span class="input-group-text">$</span>
-                                        <input
-                                            id="auction-minimum-increment"
-                                            name="incrementoMinimo"
-                                            class="form-control"
-                                            type="number"
-                                            min="0.01"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            required
-                                        >
-                                        <div class="invalid-feedback">El incremento debe ser mayor que cero.</div>
-                                    </div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-start" class="form-label fw-semibold">Fecha de inicio</label>
-                                    <input
-                                        id="auction-start"
-                                        name="fechaInicio"
-                                        class="form-control"
-                                        type="datetime-local"
-                                        required
-                                    >
-                                    <div class="invalid-feedback">Ingresá una fecha de inicio válida.</div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <label for="auction-end" class="form-label fw-semibold">Fecha de finalización</label>
-                                    <input
-                                        id="auction-end"
-                                        name="fechaFin"
-                                        class="form-control"
-                                        type="datetime-local"
-                                        required
-                                    >
-                                    <div class="invalid-feedback">La finalización debe ser posterior al inicio.</div>
-                                </div>
-
-                                <div class="col-12 d-flex flex-column flex-sm-row gap-2 justify-content-end mt-4">
-                                    <button class="btn btn-outline-secondary px-4" type="reset">Limpiar</button>
-                                    <button class="btn btn-primary px-4 fw-semibold" type="submit">Publicar subasta</button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="app.js"></script>
-</body>
-</html>
+  <section class="app-view" data-page="activities"><div class="workspace-layout">
+    <aside class="side-panel"><h2>Mis Actividades</h2><nav class="side-nav"><a class="active" href="#purchases">▣ Mis Compras / Pujas</a><a href="#publications">▧ Mis Publicaciones</a></nav></aside>
+    <div class="workspace-content activities-content">
+      <section id="purchases"><h1 class="section-title">Mis Compras / Pujas</h1><div class="tabs"><button class="active">En curso <span>0</span></button><button>Ganadas <span>0</span></button><button>Perdidas <span>0</span></button></div>
+        <div class="activity-table-wrap"><table><thead><tr><th>Subasta</th><th>Mi oferta</th><th>Oferta actual</th><th>Estado</th><th>Tiempo restante</th><th>Acción</th></tr></thead></table><div class="empty-state"><i>⌁</i><strong>Sin compras o pujas para mostrar</strong><p>Esta información estará disponible al integrar el módulo de actividades.</p></div></div>
+      </section>
+      <section id="publications" class="publications-section"><h2 class="section-title">Mis Publicaciones</h2><div class="tabs"><button class="active">Activas <span>0</span></button><button>Finalizadas <span>0</span></button><button>Desiertas <span>0</span></button></div>
+        <div class="activity-table-wrap"><table><thead><tr><th>Subasta</th><th>Precio actual</th><th>Ofertas</th><th>Estado</th><th>Tiempo restante</th><th>Acción</th></tr></thead></table><div class="empty-state"><i>▧</i><strong>Sin publicaciones para mostrar</strong><p>Tus subastas aparecerán aquí cuando el módulo esté integrado.</p></div></div>
+      </section>
+    </div>
+  </div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="app.js"></script>
+</body></html>

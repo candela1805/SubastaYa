@@ -1,42 +1,43 @@
-using System;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models
+namespace SubastaYa.API.Models;
+
+public sealed class Subasta
 {
-    public class Subasta
-    {
-        [Key]
-        public int Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
 
-        [Required]
-        public int VendedorId { get; set; }
+    [Required]
+    [MaxLength(150)]
+    public string Titulo { get; set; } = string.Empty;
 
-        [Required]
-        public int CategoriaId { get; set; }
+    [Required]
+    [MaxLength(2_000)]
+    public string? Descripcion { get; set; } = string.Empty;
 
-        [Required]
-        public string Titulo { get; set; } = string.Empty;
+    [MaxLength(500)]
+    public string? ImagenUrl { get; set; }
 
-        public string? Descripcion { get; set; }
+    [Required]
+    [MaxLength(100)]
+    public string Categoria {  get; set; } = string.Empty;
 
-        public string? UrlImagen { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal PrecioInicial { get; set; }
 
-        // Parámetros económicos
-        public decimal PrecioBase { get; set; }
-        
-        public decimal IncrementoMinimo { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal PrecioActual { get; set; }
 
-        // Ventana temporal
-        public DateTime FechaInicio { get; set; }
-        
-        public DateTime FechaFin { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal IncrementoMinimo {  get; set; }
 
-        // Posibles valores: "PROGRAMADA", "ACTIVA", "FINALIZADA", "DESIERTA"
-        [Required]
-        public string Estado { get; set; } = string.Empty;
+    public DateTimeOffset FechaInicioUtc { get; set; }
 
-        // Para Optimistic Locking (Concurrencia y Anti-sniping)
-        [Timestamp]
-        public byte[] Version { get; set; } = Array.Empty<byte>();
-    }
+    public DateTimeOffset FechaFinUtc { get; set; }
+
+    public EstadoSubasta Estado {  get; set; }
+
+    // SQL Server genera un nuevo valor en cada INSERT o UPDATE.
+    [Timestamp]
+    public byte[] Version { get; set; } = Array.Empty<byte>();
 }

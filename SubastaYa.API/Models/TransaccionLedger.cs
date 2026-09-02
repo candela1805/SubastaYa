@@ -1,21 +1,25 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models
+namespace SubastaYa.API.Models;
+
+public sealed class TransaccionLedger
 {
-    public class TransaccionLedger
-    {
-        [Key]
-        public int Id{ get; set; }
-        public int BilleteraId{ get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
 
-        // Deposito, Retencion, Liberacion, Pago, Cobro
-        public string Tipo { get; set; } = string.Empty;
+    public Guid BilleteraId { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal Monto{ get; set; }
-        public DateTime Fecha{ get; set; }
+    public Billetera Billetera { get; set; } = null!;
 
-        public int? SubastaId{ get; set; }
-    }
+    public TipoMovimientoBilletera Tipo { get; set; }
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal Monto { get; set; }
+
+    [Required]
+    [MaxLength(250)]
+    public string Descripcion { get; set; } = string.Empty;
+
+    public DateTimeOffset FechaUtc { get; set; }
+        = DateTimeOffset.UtcNow;
 }
