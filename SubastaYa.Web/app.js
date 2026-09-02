@@ -16,51 +16,17 @@ async function fetchAuctions() {
     const spinner = document.getElementById("loading-spinner");
 
     try {
-        // DESCOMENTAR PARA USAR LA API REAL CUANDO ESTÉ LISTA:
-        /*
         const response = await fetch(API_URL);
         if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status}`);
         }
         const auctions = await response.json();
-        */
-
-        // --- DATOS MOCK PARA MAQUETACIÓN (Eliminar al conectar backend) ---
-        const mockAuctions = [
-            {
-                id: 1,
-                title: "MacBook Pro M2 16GB",
-                currentBid: 850000,
-                endTime: "00:45:10",
-                status: "Activa",
-                img: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600"
-            },
-            {
-                id: 2,
-                title: "Silla Gamer Noblechairs",
-                currentBid: 120000,
-                endTime: "02:15:00",
-                status: "Activa",
-                img: "https://images.unsplash.com/photo-1598550476439-6847785fcea6?auto=format&fit=crop&w=600"
-            },
-            {
-                id: 3,
-                title: "Monitor UltraWide LG 34'",
-                currentBid: 340000,
-                endTime: "00:00:30",
-                status: "Fuego",
-                img: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=600"
-            }
-        ];
-
-        // Simulamos tiempo de carga de red (1 segundo) para ver el spinner
-        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Ocultar el spinner
         spinner.style.display = "none";
 
         // Renderizar las tarjetas en el DOM
-        renderAuctions(mockAuctions, container);
+        renderAuctions(auctions, container);
     } catch (error) {
         console.error("Fallo al cargar las subastas:", error);
         spinner.innerHTML = `
@@ -78,9 +44,20 @@ async function fetchAuctions() {
  * Dibuja las tarjetas informativas en el HTML.
  */
 function renderAuctions(auctions, container) {
+    container.replaceChildren();
+
+    if (!Array.isArray(auctions) || auctions.length === 0) {
+        const emptyMessage = document.createElement("div");
+        emptyMessage.className = "alert alert-info text-center";
+        emptyMessage.textContent = "No hay subastas activas en este momento.";
+        container.appendChild(emptyMessage);
+        return;
+    }
+
     auctions.forEach(auction => {
         // Lógica visual para subastas por terminar
-        const isEndingSoon = auction.endTime.startsWith("00:00");
+        const remainingMilliseconds = getRemainingMilliseconds(auction.endTime);
+        const isEndingSoon = remainingMilliseconds > 0 && remainingMilliseconds <= 60_000;
         const badgeColor = isEndingSoon ? "text-danger" : "text-primary";
         const badgeIcon = isEndingSoon ? "🔥 Por terminar" : "✅ Activa";
 
@@ -89,33 +66,71 @@ function renderAuctions(auctions, container) {
         card.innerHTML = `
             <div class="card shadow-sm auction-card h-100">
                 <div class="auction-img-wrapper">
-                    <span class="status-badge ${badgeColor}">${badgeIcon}</span>
-                    <img src="${auction.img}" alt="${auction.title}">
+                    <span class="status-badge ${badgeColor}"></span>
+                    <img>
                 </div>
                 <div class="card-body d-flex flex-column p-4">
-                    <h5 class="card-title fw-bold text-dark mb-3">${auction.title}</h5>
+                    <h5 class="card-title fw-bold text-dark mb-3"></h5>
 
                     <div class="d-flex justify-content-between align-items-end mb-4">
                         <div>
                             <span class="d-block text-muted small mb-1">Oferta Actual</span>
-                            <span class="price-tag">$${auction.currentBid.toLocaleString("es-AR")}</span>
+                            <span class="price-tag"></span>
                         </div>
                         <div class="text-end">
                             <span class="d-block text-muted small mb-1">Cierra en</span>
                             <span class="countdown ${isEndingSoon ? "bg-danger text-white" : ""}">
-                                ⏱ ${auction.endTime}
                             </span>
                         </div>
                     </div>
 
-                    <button class="btn btn-puja btn-primary w-100 text-white fw-bold mt-auto" onclick="enterLiveRoom(${auction.id})">
+                    <button class="btn btn-puja btn-primary w-100 text-white fw-bold mt-auto" type="button">
                         Ingresar a Pujar
                     </button>
                 </div>
             </div>
         `;
+
+        const image = card.querySelector("img");
+        image.src = auction.img || "https://placehold.co/600x400?text=SubastaYa";
+        image.alt = auction.title;
+        image.addEventListener("error", () => {
+            image.src = "https://placehold.co/600x400?text=SubastaYa";
+        }, { once: true });
+
+        card.querySelector(".status-badge").textContent = badgeIcon;
+        card.querySelector(".card-title").textContent = auction.title;
+        card.querySelector(".price-tag").textContent = new Intl.NumberFormat("es-AR", {
+            style: "currency",
+            currency: "ARS",
+            maximumFractionDigits: 0
+        }).format(auction.currentBid);
+        card.querySelector(".countdown").textContent = `⏱ ${formatRemainingTime(remainingMilliseconds)}`;
+        card.querySelector("button").addEventListener("click", () => enterLiveRoom(auction.id));
+
         container.appendChild(card);
     });
+}
+
+function getRemainingMilliseconds(endTime) {
+    const normalizedEndTime = /(?:Z|[+-]\d{2}:\d{2})$/.test(endTime)
+        ? endTime
+        : `${endTime}Z`;
+
+    return Math.max(new Date(normalizedEndTime).getTime() - Date.now(), 0);
+}
+
+function formatRemainingTime(milliseconds) {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const days = Math.floor(totalSeconds / 86_400);
+    const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+    const minutes = Math.floor((totalSeconds % 3_600) / 60);
+    const seconds = totalSeconds % 60;
+    const time = [hours, minutes, seconds]
+        .map(value => value.toString().padStart(2, "0"))
+        .join(":");
+
+    return days > 0 ? `${days}d ${time}` : time;
 }
 
 function enterLiveRoom(auctionId) {

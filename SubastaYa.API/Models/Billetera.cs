@@ -22,6 +22,6 @@ namespace SubastaYa.API.Models
 
         // Para Optimistic Locking (Concurrencia)
         [Timestamp]
-        public byte[] Version { get; set; }
+        public byte[] Version { get; set; } = Array.Empty<byte>();
     }
 }

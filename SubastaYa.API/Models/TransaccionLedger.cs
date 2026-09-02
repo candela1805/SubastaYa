@@ -10,7 +10,7 @@ namespace SubastaYa.API.Models
         public int BilleteraId{ get; set; }
 
         // Deposito, Retencion, Liberacion, Pago, Cobro
-        public string Tipo { get; set; }
+        public string Tipo { get; set; } = string.Empty;
 
         [Column(TypeName = "decimal(10,2)")]
         public decimal Monto{ get; set; }

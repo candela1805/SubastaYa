@@ -6,11 +6,11 @@ namespace SubastaYa.API.Models
     {
         [Key]
         public int Id{ get; set; }
-        public string Entidad{ get; set; } // Subasta, Billetera, Sistema
+        public string Entidad{ get; set; } = string.Empty; // Subasta, Billetera, Sistema
         public int? EntidadId{ get; set; }
-        public string Accion{ get; set; }
+        public string Accion{ get; set; } = string.Empty;
         public int? UsuarioId{ get; set; }
-        public string DatalleJson{ get; set; }
+        public string DatalleJson{ get; set; } = string.Empty;
         public DateTime Fecha{ get; set; } = DateTime.UtcNow;
     }
 }

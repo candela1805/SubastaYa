@@ -15,11 +15,11 @@ namespace SubastaYa.API.Models
         public int CategoriaId { get; set; }
 
         [Required]
-        public string Titulo { get; set; }
+        public string Titulo { get; set; } = string.Empty;
 
-        public string Descripcion { get; set; }
+        public string? Descripcion { get; set; }
 
-        public string UrlImagen { get; set; }
+        public string? UrlImagen { get; set; }
 
         // Parámetros económicos
         public decimal PrecioBase { get; set; }
@@ -33,10 +33,10 @@ namespace SubastaYa.API.Models
 
         // Posibles valores: "PROGRAMADA", "ACTIVA", "FINALIZADA", "DESIERTA"
         [Required]
-        public string Estado { get; set; } 
+        public string Estado { get; set; } = string.Empty;
 
         // Para Optimistic Locking (Concurrencia y Anti-sniping)
         [Timestamp]
-        public byte[] Version { get; set; }
+        public byte[] Version { get; set; } = Array.Empty<byte>();
     }
 }

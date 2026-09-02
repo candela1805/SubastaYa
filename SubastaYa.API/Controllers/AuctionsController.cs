@@ -17,15 +17,35 @@ public sealed class AuctionsController : ControllerBase
     }
 
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<Subasta>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<Subasta>>> ObtenerSubastas(
+    [ProducesResponseType(typeof(IEnumerable<AuctionDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<AuctionDto>>> ObtenerSubastas(
         CancellationToken cancellationToken)
     {
         var subastas = await _dbContext.Subastas
             .AsNoTracking()
-            .OrderBy(subasta => subasta.FechaFinUtc)
+            .Where(subasta => subasta.Estado == "ACTIVA")
+            .OrderBy(subasta => subasta.FechaFin)
             .ToListAsync(cancellationToken);
 
-        return Ok(subastas);
+        var subastaIds = subastas.Select(subasta => subasta.Id).ToArray();
+        var pujas = await _dbContext.Pujas
+            .AsNoTracking()
+            .Where(puja => subastaIds.Contains(puja.SubastaId))
+            .ToListAsync(cancellationToken);
+
+        var response = subastas.Select(subasta => new AuctionDto(
+            subasta.Id,
+            subasta.Titulo,
+            subasta.Descripcion,
+            subasta.UrlImagen,
+            pujas
+                .Where(puja => puja.SubastaId == subasta.Id)
+                .Select(puja => puja.Monto)
+                .DefaultIfEmpty(subasta.PrecioBase)
+                .Max(),
+            subasta.FechaFin,
+            subasta.Estado));
+
+        return Ok(response);
     }
 }
