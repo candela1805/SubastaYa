@@ -1,32 +1,42 @@
+using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models;
-
-public sealed class Subasta
+namespace SubastaYa.API.Models
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    public class Subasta
+    {
+        [Key]
+        public int Id { get; set; }
 
-    [Required]
-    [MaxLength(150)]
-    public string Titulo { get; set; } = string.Empty;
+        [Required]
+        public int VendedorId { get; set; }
 
-    [MaxLength(2_000)]
-    public string? Descripcion { get; set; }
+        [Required]
+        public int CategoriaId { get; set; }
 
-    [Column(TypeName = "decimal(18,2)")]
-    public decimal PrecioInicial { get; set; }
+        [Required]
+        public string Titulo { get; set; }
 
-    [Column(TypeName = "decimal(18,2)")]
-    public decimal PrecioActual { get; set; }
+        public string Descripcion { get; set; }
 
-    public DateTimeOffset FechaInicioUtc { get; set; }
+        public string UrlImagen { get; set; }
 
-    public DateTimeOffset FechaFinUtc { get; set; }
+        // Parámetros económicos
+        public decimal PrecioBase { get; set; }
+        
+        public decimal IncrementoMinimo { get; set; }
 
-    public bool Activa { get; set; } = true;
+        // Ventana temporal
+        public DateTime FechaInicio { get; set; }
+        
+        public DateTime FechaFin { get; set; }
 
-    // SQL Server genera un nuevo valor en cada INSERT o UPDATE.
-    [Timestamp]
-    public byte[] Version { get; set; } = Array.Empty<byte>();
+        // Posibles valores: "PROGRAMADA", "ACTIVA", "FINALIZADA", "DESIERTA"
+        [Required]
+        public string Estado { get; set; } 
+
+        // Para Optimistic Locking (Concurrencia y Anti-sniping)
+        [Timestamp]
+        public byte[] Version { get; set; }
+    }
 }
