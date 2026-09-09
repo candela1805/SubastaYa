@@ -15,6 +15,21 @@ public sealed class ApplicationDbContext : DbContext
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<Billetera> Billeteras => Set<Billetera>();
     public DbSet<TransaccionLedger> TransaccionLedgers => Set<TransaccionLedger>();
+    public DbSet<Puja> Pujas => Set<Puja>();
+    public DbSet<AuditoriaLog> AuditoriaLogs => Set<AuditoriaLog>();
+
+    public override int SaveChanges()
+    {
+        ValidarAuditoriaAppendOnly();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ValidarAuditoriaAppendOnly();
+        return base.SaveChangesAsync(cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -159,5 +174,58 @@ public sealed class ApplicationDbContext : DbContext
             entity.HasIndex(transaccion => transaccion.FechaUtc);
         });
 
+        modelBuilder.Entity<Puja>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+
+                entity.Property(p => p.Monto)
+                .HasColumnType("decimal(18,2)");
+
+                entity.HasIndex(p => new { p.SubastaId, p.FechaUtc });
+
+                entity.HasOne(p => p.Subasta)
+                    .WithMany()
+                    .HasForeignKey(p => p.SubastaId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.Usuario)
+                    .WithMany()
+                    .HasForeignKey(p => p.UsuarioId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity<AuditoriaLog>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+
+            entity.Property(a => a.TipoEvento)
+            .IsRequired()
+            .HasMaxLength(100);
+
+            entity.Property(a => a.Detalle)
+            .IsRequired()
+            .HasMaxLength(1000);
+
+            entity.HasIndex(a => new { a.SubastaId, a.FechaUtc });
+
+            entity.HasOne(a => a.Subasta)
+            .WithMany()
+            .HasForeignKey(a => a.SubastaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        });
+    }
+
+    private void ValidarAuditoriaAppendOnly()
+    {
+        var auditoriaAlterada = ChangeTracker
+            .Entries<AuditoriaLog>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+
+        if (auditoriaAlterada)
+        {
+            throw new InvalidOperationException(
+                "Los registros de auditoría son inmutables.");
+        }
     }
 }

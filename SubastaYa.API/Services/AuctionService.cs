@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
 using SubastaYa.API.Contracts.Auctions;
 using SubastaYa.API.Data;
+using SubastaYa.API.Hubs;
 using SubastaYa.API.Models;
 
 namespace SubastaYa.API.Services;
@@ -8,10 +10,17 @@ namespace SubastaYa.API.Services;
 public sealed class AuctionService : IAuctionService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly IHubContext<AuctionHub> _hubContext;
+    private readonly ILogger<AuctionService> _logger;
 
-    public AuctionService(ApplicationDbContext dbContext)
+    public AuctionService(
+        ApplicationDbContext dbContext,
+        IHubContext<AuctionHub> hubContext,
+        ILogger<AuctionService> logger)
     {
         _dbContext = dbContext;
+        _hubContext = hubContext;
+        _logger = logger;
     }
 
     public async Task<PagedAuctionResponse> ObtenerSubastasAsync(
@@ -112,6 +121,90 @@ public sealed class AuctionService : IAuctionService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return MapearRespuesta(subasta);
+    }
+
+    public async Task CambiarEstadoAsync(
+        Guid subastaId,
+        EstadoSubasta nuevoEstado,
+        CancellationToken cancellationToken = default)
+    {
+        var subasta = await _dbContext.Subastas
+            .FirstOrDefaultAsync(s => s.Id == subastaId, cancellationToken);
+
+        if (subasta is null)
+        {
+            throw new KeyNotFoundException("la subasta no existe.");
+        }
+
+        var ahora = DateTimeOffset.UtcNow;
+        var estadoAnterior = subasta.Estado;
+
+        if (nuevoEstado == EstadoSubasta.Activa &&
+            (estadoAnterior != EstadoSubasta.Programada ||
+             subasta.FechaInicioUtc > ahora))
+        {
+            return;
+        }
+
+        if (nuevoEstado is EstadoSubasta.Finalizada or EstadoSubasta.Desierta)
+        {
+            if (estadoAnterior != EstadoSubasta.Activa ||
+                subasta.FechaFinUtc > ahora)
+            {
+                return;
+            }
+
+            var tienePujas = await _dbContext.Pujas
+                .AsNoTracking()
+                .AnyAsync(
+                    puja => puja.SubastaId == subastaId,
+                    cancellationToken);
+
+            nuevoEstado = tienePujas
+                ? EstadoSubasta.Finalizada
+                : EstadoSubasta.Desierta;
+        }
+
+        if (estadoAnterior == nuevoEstado)
+        {
+            return;
+        }
+
+        subasta.Estado = nuevoEstado;
+
+        _dbContext.AuditoriaLogs.Add(new AuditoriaLog
+        {
+            Id = Guid.NewGuid(),
+            SubastaId = subastaId,
+            TipoEvento = "AuctionStateChanged",
+            Detalle = $"Estado cambiado de {estadoAnterior} a {nuevoEstado}",
+            FechaUtc = DateTimeOffset.UtcNow
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _hubContext.Clients
+                .Group($"auction-{subastaId}")
+                .SendAsync(
+                    "AuctionStateChanged",
+                    new
+                    {
+                        SubastaId = subastaId,
+                        Estado = nuevoEstado.ToString(),
+                        subasta.FechaFinUtc
+                    },
+                    CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "El estado de la subasta {SubastaId} cambió a {Estado}, pero no pudo notificarse por SignalR.",
+                subastaId,
+                nuevoEstado);
+        }
     }
 
     private static AuctionResponse MapearRespuesta(Subasta subasta)
