@@ -3,6 +3,8 @@ using SubastaYa.API.Data;
 using System.Text.Json.Serialization;
 using SubastaYa.API.Models;
 using SubastaYa.API.Services;
+using SubastaYa.API.Hubs;
+using SubastaYa.API.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,12 +32,16 @@ builder.Services.AddCors(options =>
                 "http://localhost:5500",
                 "http://127.0.0.1:5500")
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IAuctionService, AuctionService>();
+builder.Services.AddScoped<IBidService, BidService>();
+builder.Services.AddSignalR();
+builder.Services.AddHostedService<AuctionStateWorker>();
 
 var app = builder.Build();
 
@@ -96,5 +102,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+
+app.MapHub<AuctionHub>("/hubs/auctions");
 
 app.Run();
