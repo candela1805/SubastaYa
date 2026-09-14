@@ -13,4 +13,9 @@ public interface IBidService
     Task<IReadOnlyList<BidHistoryResponse>> GetBidHistoryAsync(
         Guid subastaId,
         CancellationToken cancellationToken = default);
+
+    Task<BidRoomStateResponse> GetRoomStateAsync(
+        Guid subastaId,
+        Guid usuarioId,
+        CancellationToken cancellationToken = default);
 }

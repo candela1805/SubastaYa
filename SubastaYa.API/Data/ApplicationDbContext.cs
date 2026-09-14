@@ -190,6 +190,8 @@ public sealed class ApplicationDbContext : DbContext
 
                 entity.HasIndex(p => new { p.SubastaId, p.FechaUtc });
 
+                entity.HasIndex(p => new { p.SubastaId, p.EsGanadora });
+
                 entity.HasOne(p => p.Subasta)
                     .WithMany()
                     .HasForeignKey(p => p.SubastaId)

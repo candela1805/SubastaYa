@@ -39,6 +39,40 @@ public class BidsController : ControllerBase
         }
     }
 
+    [HttpGet("state")]
+    [Authorize]
+    public async Task<ActionResult<BidRoomStateResponse>> GetRoomState(
+        Guid subastaId,
+        CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(new BidErrorResponse
+            {
+                Code = "UNAUTHORIZED",
+                Message = "No se pudo identificar al usuario autenticado."
+            });
+        }
+
+        try
+        {
+            var state = await _bidService.GetRoomStateAsync(
+                subastaId,
+                userId,
+                cancellationToken);
+
+            return Ok(state);
+        }
+        catch (BidNotFoundException ex)
+        {
+            return NotFound(ToErrorResponse(ex));
+        }
+        catch (BidStateConflictException ex)
+        {
+            return Conflict(ToErrorResponse(ex));
+        }
+    }
+
     [HttpPost]
     [Authorize]
     public async Task<ActionResult<BidResponse>> PlaceBid(
@@ -48,9 +82,10 @@ public class BidsController : ControllerBase
     {
         if (!_currentUserService.TryGetUserId(out var userId))
         {
-            return Unauthorized(new
+            return Unauthorized(new BidErrorResponse
             {
-                message = "No se pudo identificar al usuario autenticado."
+                Code = "UNAUTHORIZED",
+                Message = "No se pudo identificar al usuario autenticado."
             });
         }
 
@@ -63,19 +98,45 @@ public class BidsController : ControllerBase
                 cancellationToken);
             return Ok(result);
         }
-        catch (KeyNotFoundException ex)
+        catch (BidNotFoundException ex)
         {
-            return NotFound(new { message = ex.Message });
+            return NotFound(ToErrorResponse(ex));
+        }
+
+        catch (BidForbiddenException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                ToErrorResponse(ex));
+        }
+
+        catch (BidStateConflictException ex)
+        {
+            return Conflict(ToErrorResponse(ex));
         }
 
         catch (BidConcurrencyException ex)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(ToErrorResponse(ex));
         }
 
-        catch (InvalidOperationException ex)
+        catch (BidInsufficientFundsException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return UnprocessableEntity(ToErrorResponse(ex));
         }
+
+        catch (BidValidationException ex)
+        {
+            return BadRequest(ToErrorResponse(ex));
+        }
+    }
+
+    private static BidErrorResponse ToErrorResponse(BidRuleException exception)
+    {
+        return new BidErrorResponse
+        {
+            Code = exception.Code,
+            Message = exception.Message
+        };
     }
 }

@@ -10,4 +10,7 @@ public class BidResponse
     public decimal PrecioActual { get; set; }
     public DateTimeOffset FechaFinUtc { get; set; }
     public bool SubastaExtendida { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public decimal IncrementoMinimo { get; set; }
+    public decimal PujaMinimaSiguiente { get; set; }
 }

@@ -9,21 +9,23 @@ namespace SubastaYa.API.Services;
 
 public sealed class BidService : IBidService
 {
+    public const decimal MaxMoneyAmount = 9_999_999_999_999_999.99m;
+
     private readonly ApplicationDbContext _context;
     private readonly IHubContext<AuctionHub> _hubContext;
-    private readonly DbContextOptions<ApplicationDbContext> _dbContextOptions;
     private readonly ILogger<BidService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public BidService(
         ApplicationDbContext context,
         IHubContext<AuctionHub> hubContext,
-        DbContextOptions<ApplicationDbContext> dbContextOptions,
-        ILogger<BidService> logger)
+        ILogger<BidService> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _hubContext = hubContext;
-        _dbContextOptions = dbContextOptions;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<IReadOnlyList<BidHistoryResponse>> GetBidHistoryAsync(
@@ -42,7 +44,6 @@ public sealed class BidService : IBidService
         var pujas = await _context.Pujas
             .AsNoTracking()
             .Where(puja => puja.SubastaId == subastaId)
-            .OrderBy(puja => puja.FechaUtc)
             .Select(puja => new
             {
                 puja.Id,
@@ -53,6 +54,8 @@ public sealed class BidService : IBidService
             .ToListAsync(cancellationToken);
 
         return pujas
+            .OrderBy(puja => puja.FechaUtc)
+            .ThenBy(puja => puja.Id)
             .Select(puja => new BidHistoryResponse
             {
                 Id = puja.Id,
@@ -63,74 +66,91 @@ public sealed class BidService : IBidService
             .ToList();
     }
 
-    public async Task<BidResponse> PlaceBidAsync(
+    public async Task<BidRoomStateResponse> GetRoomStateAsync(
         Guid subastaId,
         Guid usuarioId,
-        PlaceBidRequest request,
         CancellationToken cancellationToken = default)
     {
         var subasta = await _context.Subastas
+            .AsNoTracking()
             .SingleOrDefaultAsync(
                 item => item.Id == subastaId,
                 cancellationToken);
 
         if (subasta is null)
         {
-            throw new KeyNotFoundException("La subasta no existe.");
+            throw new BidNotFoundException(
+                "AUCTION_NOT_FOUND",
+                "La subasta no existe.");
         }
 
-        var ahora = DateTimeOffset.UtcNow;
+        var pujasGanadoras = await _context.Pujas
+            .AsNoTracking()
+            .Where(puja => puja.SubastaId == subastaId && puja.EsGanadora)
+            .Select(puja => new
+            {
+                puja.UsuarioId
+            })
+            .Take(2)
+            .ToListAsync(cancellationToken);
 
-        if (subasta.Estado != EstadoSubasta.Activa)
+        if (pujasGanadoras.Count > 1)
         {
-            throw new InvalidOperationException("La subasta no está activa.");
+            throw new BidStateConflictException(
+                "BID_STATE_INCONSISTENT",
+                "La subasta tiene más de una puja ganadora registrada.");
         }
 
-        if (ahora < subasta.FechaInicioUtc)
+        var pujaGanadora = pujasGanadoras.SingleOrDefault();
+
+        if (pujaGanadora is null && await _context.Pujas
+                .AsNoTracking()
+                .AnyAsync(
+                    puja => puja.SubastaId == subastaId,
+                    cancellationToken))
         {
-            throw new InvalidOperationException("La subasta todavía no comenzó.");
+            throw new BidStateConflictException(
+                "BID_STATE_INCONSISTENT",
+                "La subasta tiene pujas, pero ninguna está marcada como ganadora.");
         }
 
-        if (ahora >= subasta.FechaFinUtc)
+        var pujaMinimaSiguiente = CalcularPujaMinima(subasta);
+
+        var usuarioParticipo = pujaGanadora is not null &&
+            (pujaGanadora.UsuarioId == usuarioId ||
+             await _context.Pujas
+                 .AsNoTracking()
+                 .AnyAsync(
+                     puja => puja.SubastaId == subastaId &&
+                         puja.UsuarioId == usuarioId,
+                     cancellationToken));
+
+        var estadoPostor = !usuarioParticipo
+            ? "SinPuja"
+            : pujaGanadora!.UsuarioId == usuarioId
+                ? "Liderando"
+                : "Superado";
+
+        return new BidRoomStateResponse
         {
-            throw new InvalidOperationException("La subasta ya finalizó.");
-        }
+            SubastaId = subasta.Id,
+            PrecioActual = subasta.PrecioActual,
+            IncrementoMinimo = subasta.IncrementoMinimo,
+            PujaMinimaSiguiente = pujaMinimaSiguiente,
+            FechaFinUtc = subasta.FechaFinUtc,
+            EstadoSubasta = subasta.Estado,
+            EstadoPostor = estadoPostor
+        };
+    }
 
-        var montoMinimo = subasta.PrecioActual + subasta.IncrementoMinimo;
-
-        if (request.Monto < montoMinimo)
-        {
-            throw new InvalidOperationException(
-                $"La puja mínima es de {montoMinimo:F2}.");
-        }
-
-        var billetera = await _context.Billeteras
-            .SingleOrDefaultAsync(
-                item => item.UsuarioId == usuarioId,
-                cancellationToken);
-
-        if (billetera is null)
-        {
-            throw new InvalidOperationException("El usuario no tiene billetera.");
-        }
-
-        var pujaAnterior = await _context.Pujas
-            .Where(puja => puja.SubastaId == subastaId)
-            .OrderByDescending(puja => puja.Monto)
-            .ThenByDescending(puja => puja.FechaUtc)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var montoARequerir = pujaAnterior is not null &&
-            pujaAnterior.UsuarioId == usuarioId
-                ? request.Monto - pujaAnterior.Monto
-                : request.Monto;
-
-        if (billetera.SaldoDisponible < montoARequerir)
-        {
-            throw new InvalidOperationException(
-                "Saldo disponible insuficiente para realizar la puja.");
-        }
-
+    public async Task<BidResponse> PlaceBidAsync(
+        Guid subastaId,
+        Guid usuarioId,
+        PlaceBidRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var monto = ValidarMonto(request.Monto);
+        var ahora = _timeProvider.GetUtcNow();
         await using var transaction = await _context.Database
             .BeginTransactionAsync(cancellationToken);
 
@@ -138,6 +158,123 @@ public sealed class BidService : IBidService
 
         try
         {
+            var subasta = await _context.Subastas
+                .SingleOrDefaultAsync(
+                    item => item.Id == subastaId,
+                    cancellationToken);
+
+            if (subasta is null)
+            {
+                throw new BidNotFoundException(
+                    "AUCTION_NOT_FOUND",
+                    "La subasta no existe.");
+            }
+
+            if (subasta.VendedorId == usuarioId)
+            {
+                throw new BidForbiddenException(
+                    "OWN_AUCTION_BID",
+                    "No podés pujar en tu propia subasta.");
+            }
+
+            if (subasta.Estado != EstadoSubasta.Activa)
+            {
+                throw new BidStateConflictException(
+                    "AUCTION_NOT_ACTIVE",
+                    "La subasta no está activa.");
+            }
+
+            if (ahora < subasta.FechaInicioUtc)
+            {
+                throw new BidStateConflictException(
+                    "AUCTION_NOT_STARTED",
+                    "La subasta todavía no comenzó.");
+            }
+
+            if (ahora >= subasta.FechaFinUtc)
+            {
+                throw new BidStateConflictException(
+                    "AUCTION_ENDED",
+                    "La subasta ya finalizó.");
+            }
+
+            var montoMinimo = CalcularPujaMinima(subasta);
+
+            if (monto < montoMinimo)
+            {
+                throw new BidValidationException(
+                    "BID_BELOW_MINIMUM",
+                    $"La puja mínima es de {montoMinimo:F2}.");
+            }
+
+            var pujasGanadoras = await _context.Pujas
+                .Where(puja =>
+                    puja.SubastaId == subastaId && puja.EsGanadora)
+                .Take(2)
+                .ToListAsync(cancellationToken);
+
+            if (pujasGanadoras.Count > 1)
+            {
+                throw new BidStateConflictException(
+                    "BID_STATE_INCONSISTENT",
+                    "La subasta tiene más de una puja ganadora registrada.");
+            }
+
+            var pujaAnterior = pujasGanadoras.SingleOrDefault();
+
+            if (pujaAnterior is null && await _context.Pujas
+                    .AnyAsync(
+                        puja => puja.SubastaId == subastaId,
+                        cancellationToken))
+            {
+                throw new BidStateConflictException(
+                    "BID_STATE_INCONSISTENT",
+                    "La subasta tiene pujas, pero ninguna está marcada como ganadora.");
+            }
+
+            if (pujaAnterior is not null &&
+                pujaAnterior.Monto != subasta.PrecioActual)
+            {
+                throw new BidStateConflictException(
+                    "BID_STATE_INCONSISTENT",
+                    "El estado actual de la subasta es inconsistente. Actualizá los datos e intentá nuevamente.");
+            }
+
+            var billetera = await _context.Billeteras
+                .SingleOrDefaultAsync(
+                    item => item.UsuarioId == usuarioId,
+                    cancellationToken);
+
+            if (billetera is null)
+            {
+                throw new BidInsufficientFundsException(
+                    "WALLET_NOT_FOUND",
+                    "El usuario no tiene una billetera disponible.");
+            }
+
+            var mismoLider = pujaAnterior is not null &&
+                pujaAnterior.UsuarioId == usuarioId;
+            var montoARequerir = mismoLider
+                ? monto - pujaAnterior!.Monto
+                : monto;
+
+            if (mismoLider &&
+                billetera.SaldoRetenido < pujaAnterior!.Monto)
+            {
+                throw new BidStateConflictException(
+                    "ESCROW_BALANCE_INCONSISTENT",
+                    "El saldo retenido del postor actual es inconsistente.");
+            }
+
+            if (billetera.SaldoDisponible < montoARequerir)
+            {
+                throw new BidInsufficientFundsException(
+                    "INSUFFICIENT_BALANCE",
+                    "Saldo disponible insuficiente para realizar la puja.");
+            }
+
+            var nuevaPujaId = Guid.NewGuid();
+
             if (pujaAnterior is not null && pujaAnterior.UsuarioId != usuarioId)
             {
                 var billeteraAnterior = await _context.Billeteras
@@ -147,8 +284,16 @@ public sealed class BidService : IBidService
 
                 if (billeteraAnterior is null)
                 {
-                    throw new InvalidOperationException(
+                    throw new BidStateConflictException(
+                        "PREVIOUS_BIDDER_WALLET_NOT_FOUND",
                         "El ganador anterior no tiene billetera.");
+                }
+
+                if (billeteraAnterior.SaldoRetenido < pujaAnterior.Monto)
+                {
+                    throw new BidStateConflictException(
+                        "ESCROW_BALANCE_INCONSISTENT",
+                        "El saldo retenido del ganador anterior es inconsistente.");
                 }
 
                 billeteraAnterior.SaldoRetenido -= pujaAnterior.Monto;
@@ -161,49 +306,44 @@ public sealed class BidService : IBidService
                     Tipo = TipoMovimientoBilletera.Liberacion,
                     Monto = pujaAnterior.Monto,
                     Descripcion =
-                        $"Liberación por haber sido superado en la subasta {subastaId}.",
-                    FechaUtc = DateTimeOffset.UtcNow
+                        $"Liberación por puja {nuevaPujaId} que superó la oferta en la subasta {subastaId}.",
+                    FechaUtc = ahora
                 });
             }
 
-            var montoARetener = pujaAnterior is not null &&
-                pujaAnterior.UsuarioId == usuarioId
-                    ? montoARequerir
-                    : request.Monto;
+            if (pujaAnterior is not null)
+            {
+                pujaAnterior.EsGanadora = false;
+            }
 
-            billetera.SaldoRetenido += montoARetener;
-            billetera.SaldoDisponible -= montoARetener;
+            billetera.SaldoRetenido += montoARequerir;
+            billetera.SaldoDisponible -= montoARequerir;
 
             _context.TransaccionLedgers.Add(new TransaccionLedger
             {
                 Id = Guid.NewGuid(),
                 BilleteraId = billetera.Id,
                 Tipo = TipoMovimientoBilletera.Retencion,
-                Monto = montoARetener,
-                Descripcion = $"Retención por puja en la subasta {subastaId}.",
-                FechaUtc = DateTimeOffset.UtcNow
+                Monto = montoARequerir,
+                Descripcion =
+                    $"Retención por puja {nuevaPujaId} en la subasta {subastaId}.",
+                FechaUtc = ahora
             });
-
-            var fechaPuja = DateTimeOffset.UtcNow;
-
-            if (fechaPuja >= subasta.FechaFinUtc)
-            {
-                throw new InvalidOperationException("La subasta ya finalizó.");
-            }
 
             var nuevaPuja = new Puja
             {
-                Id = Guid.NewGuid(),
+                Id = nuevaPujaId,
                 SubastaId = subastaId,
                 UsuarioId = usuarioId,
-                Monto = request.Monto,
-                FechaUtc = fechaPuja
+                Monto = monto,
+                EsGanadora = true,
+                FechaUtc = ahora
             };
 
             _context.Pujas.Add(nuevaPuja);
-            subasta.PrecioActual = request.Monto;
+            subasta.PrecioActual = monto;
 
-            var tiempoRestante = subasta.FechaFinUtc - fechaPuja;
+            var tiempoRestante = subasta.FechaFinUtc - ahora;
             var subastaExtendida = false;
 
             if (tiempoRestante <= TimeSpan.FromSeconds(60))
@@ -217,10 +357,20 @@ public sealed class BidService : IBidService
                     SubastaId = subastaId,
                     TipoEvento = "AuctionExtended",
                     Detalle =
-                        $"La subasta fue extendida por 2 minutos tras una puja de {request.Monto:F2} en los últimos 60 segundos.",
-                    FechaUtc = fechaPuja
+                        $"La subasta fue extendida por 2 minutos tras la puja {nuevaPujaId} de {monto:F2} en los últimos 60 segundos.",
+                    FechaUtc = ahora
                 });
             }
+
+            _context.AuditoriaLogs.Add(new AuditoriaLog
+            {
+                Id = Guid.NewGuid(),
+                SubastaId = subastaId,
+                TipoEvento = "BidPlaced",
+                Detalle =
+                    $"Puja {nuevaPujaId} confirmada por {monto:F2} para el usuario {usuarioId}.",
+                FechaUtc = ahora
+            });
 
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -234,20 +384,23 @@ public sealed class BidService : IBidService
                 FechaUtc = nuevaPuja.FechaUtc,
                 PrecioActual = subasta.PrecioActual,
                 FechaFinUtc = subasta.FechaFinUtc,
-                SubastaExtendida = subastaExtendida
+                SubastaExtendida = subastaExtendida,
+                Estado = "Liderando",
+                IncrementoMinimo = subasta.IncrementoMinimo,
+                PujaMinimaSiguiente =
+                    subasta.PrecioActual + subasta.IncrementoMinimo
             };
         }
         catch (DbUpdateConcurrencyException)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            await RegistrarRechazoPorConcurrenciaAsync(subastaId, request.Monto);
+            await transaction.RollbackAsync(CancellationToken.None);
 
             throw new BidConcurrencyException(
-                "La subasta fue modificada por otra operación. Actualizá los datos e intentá nuevamente.");
+                "La subasta cambió mientras se procesaba la puja. Actualizá los datos e intentá nuevamente.");
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
 
@@ -256,34 +409,48 @@ public sealed class BidService : IBidService
         return response;
     }
 
-    private async Task RegistrarRechazoPorConcurrenciaAsync(
-        Guid subastaId,
-        decimal monto)
+    private static decimal ValidarMonto(decimal? montoSolicitado)
     {
-        try
+        if (!montoSolicitado.HasValue || montoSolicitado.Value <= 0)
         {
-            await using var auditContext =
-                new ApplicationDbContext(_dbContextOptions);
-
-            auditContext.AuditoriaLogs.Add(new AuditoriaLog
-            {
-                Id = Guid.NewGuid(),
-                SubastaId = subastaId,
-                TipoEvento = "BidConcurrencyRejected",
-                Detalle =
-                    $"Puja de {monto:F2} rechazada por un conflicto de concurrencia.",
-                FechaUtc = DateTimeOffset.UtcNow
-            });
-
-            await auditContext.SaveChangesAsync(CancellationToken.None);
+            throw new BidValidationException(
+                "INVALID_BID_AMOUNT",
+                "El monto de la puja debe ser mayor a 0.");
         }
-        catch (Exception ex)
+
+        var monto = montoSolicitado.Value;
+        var escala = (decimal.GetBits(monto)[3] >> 16) & 0xFF;
+
+        if (escala > 2)
         {
-            _logger.LogError(
-                ex,
-                "No se pudo registrar la auditoría del conflicto de la subasta {SubastaId}.",
-                subastaId);
+            throw new BidValidationException(
+                "INVALID_BID_SCALE",
+                "El monto de la puja puede tener como máximo 2 decimales.");
         }
+
+        if (monto > MaxMoneyAmount)
+        {
+            throw new BidValidationException(
+                "BID_AMOUNT_LIMIT_EXCEEDED",
+                "El monto de la puja supera el límite monetario permitido.");
+        }
+
+        return monto;
+    }
+
+    private static decimal CalcularPujaMinima(Subasta subasta)
+    {
+        if (subasta.PrecioActual < 0 ||
+            subasta.IncrementoMinimo <= 0 ||
+            subasta.PrecioActual >
+                MaxMoneyAmount - subasta.IncrementoMinimo)
+        {
+            throw new BidStateConflictException(
+                "AUCTION_BID_CONFIGURATION_INVALID",
+                "La configuración monetaria de la subasta no permite nuevas pujas.");
+        }
+
+        return subasta.PrecioActual + subasta.IncrementoMinimo;
     }
 
     private async Task NotificarPujaAsync(

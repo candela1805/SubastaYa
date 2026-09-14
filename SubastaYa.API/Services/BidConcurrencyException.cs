@@ -1,9 +1,9 @@
 ﻿namespace SubastaYa.API.Services;
 
-public sealed class BidConcurrencyException : Exception
+public sealed class BidConcurrencyException : BidRuleException
 {
-    public BidConcurrencyException(string message) 
-        : base(message)
+    public BidConcurrencyException(string message)
+        : base("BID_CONFLICT", message)
     {
     }
 }

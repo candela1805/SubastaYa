@@ -58,6 +58,7 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<AuctionStateWorker>();
 
