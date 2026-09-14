@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Auctions;
 using SubastaYa.API.Models;
 using SubastaYa.API.Services;
@@ -10,10 +11,14 @@ namespace SubastaYa.API.Controllers;
 public sealed class AuctionsController : ControllerBase
 {
     private readonly IAuctionService _auctionService;
+    private readonly ICurrentUserService _currentUserService;
 
-    public AuctionsController(IAuctionService auctionService)
+    public AuctionsController(
+        IAuctionService auctionService,
+        ICurrentUserService currentUserService)
     {
         _auctionService = auctionService;
+        _currentUserService = currentUserService;
     }
 
     [HttpGet]
@@ -53,12 +58,22 @@ public sealed class AuctionsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     [ProducesResponseType(typeof(AuctionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<AuctionResponse>> CrearSubasta(
         CreateAuctionRequest request,
         CancellationToken cancellationToken)
     {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(new
+            {
+                message = "No se pudo identificar al usuario autenticado."
+            });
+        }
+
         if (string.IsNullOrWhiteSpace(request.Titulo))
             return BadRequest("El título es obligatorio.");
 
@@ -80,7 +95,10 @@ public sealed class AuctionsController : ControllerBase
         if (request.FechaFinUtc <= DateTimeOffset.UtcNow)
             return BadRequest("La fecha de finalización debe ser futura.");
 
-        var resultado = await _auctionService.CrearSubastaAsync(request, cancellationToken);
+        var resultado = await _auctionService.CrearSubastaAsync(
+            userId,
+            request,
+            cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, resultado);
     }

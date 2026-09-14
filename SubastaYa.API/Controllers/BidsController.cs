@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Bids;
 using SubastaYa.API.Services;
 
@@ -9,13 +10,14 @@ namespace SubastaYa.API.Controllers;
 public class BidsController : ControllerBase
 {
     private readonly IBidService _bidService;
+    private readonly ICurrentUserService _currentUserService;
 
-    private static readonly Guid UsuarioDemoId =
-        Guid.Parse("11111111-1111-1111-1111-111111111111");
-
-    public BidsController(IBidService bidService)
+    public BidsController(
+        IBidService bidService,
+        ICurrentUserService currentUserService)
     {
         _bidService = bidService;
+        _currentUserService = currentUserService;
     }
 
     [HttpGet]
@@ -38,16 +40,25 @@ public class BidsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<BidResponse>> PlaceBid(
         Guid subastaId,
         [FromBody] PlaceBidRequest request,
         CancellationToken cancellationToken)
     {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(new
+            {
+                message = "No se pudo identificar al usuario autenticado."
+            });
+        }
+
         try
         {
             var result = await _bidService.PlaceBidAsync(
                 subastaId,
-                UsuarioDemoId,
+                userId,
                 request,
                 cancellationToken);
             return Ok(result);

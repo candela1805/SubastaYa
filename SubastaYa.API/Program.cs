@@ -5,6 +5,8 @@ using SubastaYa.API.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Hubs;
 using SubastaYa.API.Workers;
+using SubastaYa.API.Authentication;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +20,21 @@ builder.Services
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services
+    .AddAuthentication(
+        DevelopmentAuthenticationDefaults.AuthenticationScheme)
+    .AddScheme<
+        DevelopmentAuthenticationOptions,
+        DevelopmentAuthenticationHandler>(
+        DevelopmentAuthenticationDefaults.AuthenticationScheme,
+        options => builder.Configuration
+            .GetSection(
+                DevelopmentAuthenticationDefaults.ConfigurationSection)
+            .Bind(options));
+
+builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
@@ -40,6 +57,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<AuctionStateWorker>();
 
@@ -55,51 +73,67 @@ if (app.Environment.IsDevelopment())
     var dbContext =
         scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-    var usuarioDemoId =
-        Guid.Parse("11111111-1111-1111-1111-111111111111");
+    var developmentAuthentication = scope.ServiceProvider
+        .GetRequiredService<
+            IOptionsMonitor<DevelopmentAuthenticationOptions>>()
+        .Get(DevelopmentAuthenticationDefaults.AuthenticationScheme);
 
-    var usuarioDemo = await dbContext.Usuarios
-        .Include(usuario => usuario.Billetera)
-        .SingleOrDefaultAsync(usuario => usuario.Id == usuarioDemoId);
-
-    if (usuarioDemo is null)
+    if (developmentAuthentication.Enabled)
     {
-        usuarioDemo = new Usuario
+        if (!Guid.TryParse(
+                developmentAuthentication.UserId,
+                out var usuarioDemoId))
         {
-            Id = usuarioDemoId,
-            Nombre = "Usuario Demo",
-            Email = "demo@subastaya.com",
-            PasswordHash = "DEMO_NO_USAR_EN_PRODUCCION",
-            FechaRegistro = DateTimeOffset.UtcNow
-        };
+            throw new InvalidOperationException(
+                "DevelopmentAuthentication:UserId debe ser un GUID válido.");
+        }
 
-        usuarioDemo.Billetera = new Billetera
+        var usuarioDemo = await dbContext.Usuarios
+            .Include(usuario => usuario.Billetera)
+            .SingleOrDefaultAsync(usuario => usuario.Id == usuarioDemoId);
+
+        if (usuarioDemo is null)
         {
-            UsuarioId = usuarioDemoId,
-            Usuario = usuarioDemo,
-            SaldoTotal = 0,
-            SaldoRetenido = 0,
-            SaldoDisponible = 0
-        };
+            usuarioDemo = new Usuario
+            {
+                Id = usuarioDemoId,
+                Nombre = developmentAuthentication.Name,
+                Email = developmentAuthentication.Email,
+                PasswordHash = "DEMO_NO_USAR_EN_PRODUCCION",
+                FechaRegistro = DateTimeOffset.UtcNow
+            };
 
-        dbContext.Usuarios.Add(usuarioDemo);
+            usuarioDemo.Billetera = new Billetera
+            {
+                UsuarioId = usuarioDemoId,
+                Usuario = usuarioDemo,
+                SaldoTotal = 0,
+                SaldoRetenido = 0,
+                SaldoDisponible = 0
+            };
+
+            dbContext.Usuarios.Add(usuarioDemo);
+        }
+        else if (usuarioDemo.Billetera is null)
+        {
+            dbContext.Billeteras.Add(new Billetera
+            {
+                UsuarioId = usuarioDemo.Id,
+                Usuario = usuarioDemo,
+                SaldoTotal = 0,
+                SaldoRetenido = 0,
+                SaldoDisponible = 0
+            });
+        }
+
+        await dbContext.SaveChangesAsync();
     }
-    else if (usuarioDemo.Billetera is null)
-    {
-        dbContext.Billeteras.Add(new Billetera
-        {
-            UsuarioId = usuarioDemo.Id,
-            Usuario = usuarioDemo,
-            SaldoTotal = 0,
-            SaldoRetenido = 0,
-            SaldoDisponible = 0
-        });
-    }
-
-    await dbContext.SaveChangesAsync();
 
     app.UseCors("Frontend");
 }
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

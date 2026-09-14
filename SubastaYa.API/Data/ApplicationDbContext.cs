@@ -76,6 +76,13 @@ public sealed class ApplicationDbContext : DbContext
             entity.HasIndex(subasta => subasta.Estado);
             entity.HasIndex(subasta => subasta.Categoria);
             entity.HasIndex(subasta => subasta.PrecioActual);
+
+            entity.HasOne(subasta => subasta.Vendedor)
+                .WithMany()
+                .HasForeignKey(subasta => subasta.VendedorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(subasta => subasta.VendedorId);
         });
 
         modelBuilder.Entity<Usuario>(entity =>

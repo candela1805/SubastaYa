@@ -17,6 +17,7 @@ public interface IAuctionService
         CancellationToken cancellationToken = default);
 
     Task<AuctionResponse> CrearSubastaAsync(
+        Guid vendedorId,
         CreateAuctionRequest request,
         CancellationToken cancellationToken = default);
 

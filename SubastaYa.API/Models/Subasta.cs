@@ -7,6 +7,10 @@ public sealed class Subasta
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
+    public Guid? VendedorId { get; set; }
+
+    public Usuario? Vendedor { get; set; }
+
     [Required]
     [MaxLength(150)]
     public string Titulo { get; set; } = string.Empty;

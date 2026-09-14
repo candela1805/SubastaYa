@@ -95,12 +95,14 @@ public sealed class AuctionService : IAuctionService
     }
 
     public async Task<AuctionResponse> CrearSubastaAsync(
+        Guid vendedorId,
         CreateAuctionRequest request,
         CancellationToken cancellationToken = default)
     {
         var ahora = DateTimeOffset.UtcNow;
         var subasta = new Subasta
         {
+            VendedorId = vendedorId,
             Titulo = request.Titulo.Trim(),
             Descripcion = request.Descripcion.Trim(),
             ImagenUrl = string.IsNullOrWhiteSpace(request.ImagenUrl)

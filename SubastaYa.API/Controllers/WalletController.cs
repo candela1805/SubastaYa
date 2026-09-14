@@ -1,22 +1,24 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Wallet;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/wallet")]
 public sealed class WalletController : ControllerBase
 {
     private readonly IWalletService _walletService;
+    private readonly ICurrentUserService _currentUserService;
 
-    // Identidad temporal de Development hasta que el proyecto incorpore autenticación.
-    private static readonly Guid UsuarioDemoId =
-        Guid.Parse("11111111-1111-1111-1111-111111111111");
-
-    public WalletController(IWalletService walletService)
+    public WalletController(
+        IWalletService walletService,
+        ICurrentUserService currentUserService)
     {
         _walletService = walletService;
+        _currentUserService = currentUserService;
     }
 
     [HttpGet("balance")]
@@ -27,8 +29,14 @@ public sealed class WalletController : ControllerBase
     public async Task<ActionResult<WalletBalanceResponse>> ObtenerSaldo(
         CancellationToken cancellationToken)
     {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(
+                "No se pudo identificar al usuario autenticado.");
+        }
+
         var saldo = await _walletService.ObtenerSaldoAsync(
-            UsuarioDemoId,
+            userId,
             cancellationToken);
 
         if (saldo is null)
@@ -48,6 +56,12 @@ public sealed class WalletController : ControllerBase
     DepositRequest request,
     CancellationToken cancellationToken)
     {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(
+                "No se pudo identificar al usuario autenticado.");
+        }
+
         if (request.Monto <= 0)
             return BadRequest(
                 "El monto del depósito debe ser mayor a 0.");
@@ -59,7 +73,7 @@ public sealed class WalletController : ControllerBase
         {
 
             var saldo = await _walletService.DepositarAsync(
-                UsuarioDemoId,
+                userId,
                 request.Monto,
                 cancellationToken);
 
