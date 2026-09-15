@@ -111,10 +111,30 @@ public sealed class AuctionClosingService : IAuctionClosingService
                         $"La subasta {auctionId} tiene pujas pero ninguna ganadora.");
                 }
 
-                await transaction.RollbackAsync(cancellationToken);
-                return new AuctionClosingResult(
+                auction.Estado = EstadoSubasta.Desierta;
+                _dbContext.AuditoriaLogs.Add(new AuditoriaLog
+                {
+                    Id = Guid.NewGuid(),
+                    SubastaId = auctionId,
+                    TipoEvento = "AuctionDeserted",
+                    Detalle =
+                        "Estado anterior: Activa; estado nuevo: Desierta; motivo: vencimiento sin ofertas; origen: AuctionStateWorker.",
+                    FechaUtc = closingTime
+                });
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                var desertedResult = new AuctionClosingResult(
                     auctionId,
-                    AuctionClosingOutcome.NoBids);
+                    AuctionClosingOutcome.Deserted);
+
+                await NotifyStateChangedAsync(
+                    auctionId,
+                    EstadoSubasta.Desierta,
+                    auction.FechaFinUtc);
+
+                return desertedResult;
             }
 
             var winningBid = winningBids[0];
