@@ -77,12 +77,12 @@ public sealed class BidApiTests
         var conflict = Assert.Single(
             responses,
             response => response.StatusCode == HttpStatusCode.Conflict);
-        var successBody = await success.Content.ReadFromJsonAsync<BidResponse>();
+        var successBody = await success.Content.ReadFromJsonAsync<JsonElement>();
         var conflictBody = await conflict.Content
             .ReadFromJsonAsync<BidErrorResponse>();
 
-        Assert.NotNull(successBody);
-        Assert.Equal(110m, successBody.Monto);
+        var successAmount = successBody.GetProperty("monto");
+        AssertDecimalString(110m, successAmount);
         Assert.NotNull(conflictBody);
         Assert.Equal("BID_CONFLICT", conflictBody.Code);
     }
@@ -139,9 +139,9 @@ public sealed class BidApiTests
             Assert.Equal(
                 "SinPuja",
                 initial.GetProperty("estadoPostor").GetString());
-            Assert.Equal(
+            AssertDecimalString(
                 110m,
-                initial.GetProperty("pujaMinimaSiguiente").GetDecimal());
+                initial.GetProperty("pujaMinimaSiguiente"));
         }
 
         using (var firstBid = CreateBidRequest(
@@ -180,9 +180,9 @@ public sealed class BidApiTests
             Assert.Equal(
                 "Superado",
                 outbid.GetProperty("estadoPostor").GetString());
-            Assert.Equal(
+            AssertDecimalString(
                 130m,
-                outbid.GetProperty("pujaMinimaSiguiente").GetDecimal());
+                outbid.GetProperty("pujaMinimaSiguiente"));
         }
 
         using var winnerRequest = CreateStateRequest(
@@ -224,5 +224,17 @@ public sealed class BidApiTests
             userId.ToString());
 
         return request;
+    }
+
+    private static void AssertDecimalString(
+        decimal expected,
+        JsonElement actual)
+    {
+        Assert.Equal(JsonValueKind.String, actual.ValueKind);
+        Assert.Equal(
+            expected,
+            decimal.Parse(
+                Assert.IsType<string>(actual.GetString()),
+                System.Globalization.CultureInfo.InvariantCulture));
     }
 }

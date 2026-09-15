@@ -1,5 +1,13 @@
 const API_BASE_URL = "http://localhost:5000";
 const DEFAULT_AUCTION_IMAGE = createPlaceholderImage();
+const BID_POLL_INTERVAL_MS = 5000;
+const BID_STATE_REQUEST_TIMEOUT_MS = 8000;
+const BID_STATE_RETRY_DELAYS_MS = [1000, 2500, 5000];
+const biddingCore = window.SubastaYaBidding;
+
+if (!biddingCore) {
+    throw new Error("No se pudo cargar el módulo seguro de pujas.");
+}
 
 const auctionStateNames = {
     1: "Programada",
@@ -14,7 +22,19 @@ let bidHistory = [];
 let hubConnection = null;
 let countdownTimer = null;
 let catalogCountdownTimer = null;
+let bidPollingTimer = null;
+let bidPollingInProgress = false;
 let joinedAuctionId = null;
+let bidSubmissionCoordinator = null;
+let bidStateRequestSequence = 0;
+let bidHistoryRequestSequence = 0;
+let liveRoomGeneration = 0;
+let bidStateAbortController = null;
+let bidStateRetryTimer = null;
+let bidStateRetryAttempt = 0;
+let activeBidSubmissionContext = null;
+let deferredPersonalStateRefresh = null;
+let bidUiState = biddingCore.createBidUiState();
 const notifiedExtensions = new Set();
 
 
@@ -174,7 +194,8 @@ async function loadAuctions() {
         const response = await fetch(
             `${API_BASE_URL}/api/auctions?${parameters}`,
             {
-                cache: "no-store"
+                cache: "no-store",
+                credentials: "include"
             }
         );
 
@@ -218,6 +239,10 @@ function normalizeAuction(auction) {
         category: auction.categoria,
         currentBid: auction.precioActual,
         minimumIncrement: auction.incrementoMinimo,
+        nextMinimum: biddingCore.calculateSuggestedBid(
+            auction.precioActual,
+            auction.incrementoMinimo
+        ),
         endDateUtc: auction.fechaFinUtc,
         status: auctionStateNames[auction.estado] ?? auction.estado,
         image: auction.imagenUrl || DEFAULT_AUCTION_IMAGE
@@ -348,6 +373,14 @@ function configureLiveRoom() {
         location.hash = "catalog";
     });
 
+    bidSubmissionCoordinator = biddingCore.createBidSubmissionCoordinator({
+        sendBid: request => fetch(request.url, request.options),
+        refreshRoomState: response => refreshRoomStateAfterConflict(
+            response,
+            activeBidSubmissionContext
+        )
+    });
+
     document.getElementById("bid-form").addEventListener("submit", placeBid);
 }
 
@@ -369,20 +402,43 @@ async function openLiveRoom(auction, scroll) {
     }
 
     activeAuction = auction;
+    liveRoomGeneration += 1;
+    const roomContext = getCurrentRoomContext();
+
+    cancelBidStateRetry();
+    invalidateBidStateRequest();
+    bidHistoryRequestSequence += 1;
+    deferredPersonalStateRefresh = null;
     bidHistory = [];
+    bidUiState = biddingCore.reduceBidUiState(
+        biddingCore.createBidUiState(),
+        {
+            type: "ROOM_LOADING"
+        }
+    );
 
     showView("live", scroll);
     renderLiveAuction();
     startCountdown();
 
     await Promise.all([
-        loadBidHistory(),
-        connectToAuctionHub()
+        loadBidHistory({ roomContext }),
+        loadBidRoomState({
+            roomContext,
+            skipLoadingState: true,
+            forceSuggestedAmount: true
+        }),
+        connectToAuctionHub(roomContext)
     ]);
 }
 
-function renderLiveAuction() {
+function renderLiveAuction({ forceSuggestedAmount = false } = {}) {
+    if (!activeAuction) {
+        return;
+    }
+
     const image = document.getElementById("live-image");
+    const nextMinimum = getNextMinimum();
 
     image.classList.remove("placeholder-image");
     image.src = activeAuction.image;
@@ -394,8 +450,12 @@ function renderLiveAuction() {
     document.getElementById("live-minimum-increment").textContent = money(
         activeAuction.minimumIncrement
     );
+    document.getElementById("live-next-minimum").textContent = money(nextMinimum);
+    document.getElementById("live-end-date").textContent = formatExactDate(
+        activeAuction.endDateUtc
+    );
 
-    updateBidMinimum();
+    updateBidMinimum(forceSuggestedAmount);
     updateAuctionAvailability();
     updateCountdown();
 }
@@ -427,6 +487,10 @@ function updateCountdown() {
 }
 
 function updateAuctionAvailability() {
+    if (!activeAuction) {
+        return;
+    }
+
     const active =
         activeAuction.status === "Activa" &&
         getRemainingMilliseconds(activeAuction.endDateUtc) > 0;
@@ -434,30 +498,369 @@ function updateAuctionAvailability() {
 
     status.textContent = active ? "Activa" : activeAuction.status;
     status.classList.toggle("ending", !active);
-    document.getElementById("bid-amount").disabled = !active;
-    document.getElementById("place-bid-button").disabled = !active;
+    renderBidInteraction(active);
 }
 
-function updateBidMinimum() {
-    const minimum = activeAuction.currentBid + activeAuction.minimumIncrement;
+function updateBidMinimum(forceSuggestedAmount = false) {
+    const minimum = getNextMinimum();
     const input = document.getElementById("bid-amount");
+    let currentInputIsBelowMinimum = true;
+
+    if (input.value) {
+        try {
+            currentInputIsBelowMinimum =
+                biddingCore.toMinorUnits(input.value) <
+                biddingCore.toMinorUnits(minimum);
+        } catch {
+            currentInputIsBelowMinimum = true;
+        }
+    }
 
     input.min = minimum;
-    input.value = minimum;
+
+    if (forceSuggestedAmount || !input.value || currentInputIsBelowMinimum) {
+        input.value = minimum;
+    }
+
     document.getElementById("bid-minimum-help").textContent =
         `Oferta mínima permitida: ${money(minimum)}`;
 }
 
-async function loadBidHistory() {
-    const container = document.getElementById("bid-history");
+function getNextMinimum() {
+    if (activeAuction.nextMinimum !== undefined) {
+        return biddingCore.fromMinorUnits(
+            biddingCore.toMinorUnits(activeAuction.nextMinimum)
+        );
+    }
 
-    container.innerHTML = createLoadingState("Cargando historial");
+    return biddingCore.calculateSuggestedBid(
+        activeAuction.currentBid,
+        activeAuction.minimumIncrement
+    );
+}
+
+function renderBidInteraction(auctionIsActive = canOpenAuction(activeAuction)) {
+    const status = document.getElementById("bidder-status");
+    const statusLabel = document.getElementById("bidder-status-label");
+    const feedback = document.getElementById("bid-feedback");
+    const form = document.getElementById("bid-form");
+    const input = document.getElementById("bid-amount");
+    const button = document.getElementById("place-bid-button");
+    const submitting = Boolean(bidSubmissionCoordinator?.isSubmitting) ||
+        bidUiState.phase === "submitting";
+    const loading = ["loading", "refreshing"].includes(bidUiState.phase);
+    const controlsDisabled =
+        !auctionIsActive || bidUiState.blocked || submitting;
+
+    status.dataset.state = loading
+        ? "loading"
+        : bidUiState.bidderStatus.key;
+    statusLabel.textContent = loading
+        ? "Cargando…"
+        : bidUiState.bidderStatus.label;
+    feedback.textContent = bidUiState.feedback;
+    feedback.dataset.tone = bidUiState.feedbackTone;
+    form.setAttribute("aria-busy", String(submitting || loading));
+    input.disabled = controlsDisabled;
+    button.disabled = controlsDisabled;
+    button.textContent = submitting
+        ? "Procesando…"
+        : "⚒  Realizar puja";
+}
+
+function getCurrentRoomContext() {
+    if (!activeAuction) {
+        return null;
+    }
+
+    return {
+        auctionId: activeAuction.id,
+        generation: liveRoomGeneration
+    };
+}
+
+function isCurrentRoomContext(roomContext) {
+    return Boolean(
+        roomContext &&
+        activeAuction?.id === roomContext.auctionId &&
+        liveRoomGeneration === roomContext.generation
+    );
+}
+
+function invalidateBidStateRequest() {
+    bidStateRequestSequence += 1;
+
+    if (bidStateAbortController) {
+        const controller = bidStateAbortController;
+
+        bidStateAbortController = null;
+        controller.abort();
+    }
+}
+
+function cancelBidStateRetry() {
+    window.clearTimeout(bidStateRetryTimer);
+    bidStateRetryTimer = null;
+    bidStateRetryAttempt = 0;
+}
+
+function scheduleBidStateRetry(roomContext) {
+    if (
+        !isCurrentRoomContext(roomContext) ||
+        bidStateRetryTimer ||
+        bidPollingTimer
+    ) {
+        return;
+    }
+
+    if (bidStateRetryAttempt >= BID_STATE_RETRY_DELAYS_MS.length) {
+        bidUiState = {
+            ...bidUiState,
+            phase: "idle",
+            blocked: false,
+            feedback:
+                `${bidUiState.feedback} Podés intentar pujar con los últimos datos visibles.`,
+            feedbackTone: "warning"
+        };
+        renderBidInteraction();
+        return;
+    }
+
+    const attempt = bidStateRetryAttempt + 1;
+    const delay = BID_STATE_RETRY_DELAYS_MS[bidStateRetryAttempt];
+
+    bidStateRetryAttempt = attempt;
+    bidStateRetryTimer = window.setTimeout(() => {
+        bidStateRetryTimer = null;
+
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "ROOM_LOADING",
+            message:
+                `Reintentando actualizar la sala (${attempt}/${BID_STATE_RETRY_DELAYS_MS.length})…`
+        });
+        renderBidInteraction();
+
+        void loadBidRoomState({
+            roomContext,
+            isRetry: true,
+            skipLoadingState: true
+        });
+    }, delay);
+}
+
+function deferPersonalStateRefresh(roomContext) {
+    if (isCurrentRoomContext(roomContext)) {
+        deferredPersonalStateRefresh = {
+            ...roomContext
+        };
+    }
+}
+
+function consumeDeferredPersonalStateRefresh(roomContext) {
+    if (
+        deferredPersonalStateRefresh?.auctionId === roomContext?.auctionId &&
+        deferredPersonalStateRefresh?.generation === roomContext?.generation
+    ) {
+        deferredPersonalStateRefresh = null;
+    }
+}
+
+function flushDeferredPersonalStateRefresh(roomContext) {
+    if (
+        !isCurrentRoomContext(roomContext) ||
+        bidSubmissionCoordinator?.isSubmitting ||
+        deferredPersonalStateRefresh?.auctionId !== roomContext.auctionId ||
+        deferredPersonalStateRefresh?.generation !== roomContext.generation
+    ) {
+        return;
+    }
+
+    deferredPersonalStateRefresh = null;
+    void loadBidRoomState({
+        roomContext,
+        skipLoadingState: true
+    });
+}
+
+async function loadBidRoomState({
+    roomContext = getCurrentRoomContext(),
+    isRetry = false,
+    skipLoadingState = false,
+    forceSuggestedAmount = false,
+    feedbackMessage = "",
+    feedbackTone = "neutral"
+} = {}) {
+    if (!isCurrentRoomContext(roomContext)) {
+        return null;
+    }
+
+    const auctionId = roomContext.auctionId;
+
+    if (!isRetry) {
+        cancelBidStateRetry();
+    }
+
+    invalidateBidStateRequest();
+    const requestSequence = bidStateRequestSequence;
+    const abortController = new AbortController();
+    let requestTimedOut = false;
+
+    bidStateAbortController = abortController;
+    consumeDeferredPersonalStateRefresh(roomContext);
+
+    const requestTimeout = window.setTimeout(() => {
+        requestTimedOut = true;
+        abortController.abort();
+    }, BID_STATE_REQUEST_TIMEOUT_MS);
+
+    if (!skipLoadingState) {
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "ROOM_LOADING",
+            message: feedbackMessage || undefined,
+            tone: feedbackTone === "neutral" ? undefined : feedbackTone
+        });
+        renderBidInteraction();
+    }
+
+    try {
+        const request = biddingCore.buildRoomStateRequest(
+            API_BASE_URL,
+            auctionId
+        );
+        const response = await fetch(request.url, {
+            ...request.options,
+            signal: abortController.signal
+        });
+
+        if (!response.ok) {
+            const error = new Error(await readApiError(response));
+            error.status = response.status;
+            throw error;
+        }
+
+        const roomState = await response.json();
+
+        if (
+            requestSequence !== bidStateRequestSequence ||
+            !isCurrentRoomContext(roomContext)
+        ) {
+            return null;
+        }
+
+        const mergedAuction = biddingCore.mergeAuctionWithRoomState(
+            activeAuction,
+            roomState
+        );
+
+        mergedAuction.status =
+            auctionStateNames[roomState.estadoSubasta] ??
+            roomState.estadoSubasta;
+        Object.assign(activeAuction, mergedAuction);
+        updateCatalogAuctionSnapshot(activeAuction);
+        cancelBidStateRetry();
+
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "ROOM_LOADED",
+            bidderStatus: roomState.estadoPostor,
+            message: feedbackMessage,
+            tone: feedbackTone
+        });
+        renderLiveAuction({
+            forceSuggestedAmount
+        });
+
+        return roomState;
+    } catch (error) {
+        if (
+            requestSequence !== bidStateRequestSequence ||
+            !isCurrentRoomContext(roomContext)
+        ) {
+            return null;
+        }
+
+        const errorMessage = requestTimedOut
+            ? "La consulta superó el tiempo máximo de espera."
+            : error.message;
+        const message = feedbackMessage
+            ? `${feedbackMessage} No se pudo refrescar la sala: ${errorMessage}`
+            : `No se pudo actualizar tu estado: ${errorMessage}`;
+
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "ROOM_FAILED",
+            message
+        });
+        renderBidInteraction();
+        scheduleBidStateRetry(roomContext);
+
+        return null;
+    } finally {
+        window.clearTimeout(requestTimeout);
+
+        if (bidStateAbortController === abortController) {
+            bidStateAbortController = null;
+        }
+    }
+}
+
+async function refreshRoomStateAfterConflict(response, roomContext) {
+    const message = await readApiError(response);
+
+    if (!isCurrentRoomContext(roomContext)) {
+        return {
+            message,
+            roomState: null,
+            stale: true
+        };
+    }
+
+    bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+        type: "BID_CONFLICT",
+        message: `${message} Actualizando precio y mínimo…`
+    });
+    renderBidInteraction();
+
+    const roomState = await loadBidRoomState({
+        roomContext,
+        skipLoadingState: true,
+        forceSuggestedAmount: true,
+        feedbackMessage:
+            `${message} Los datos fueron actualizados; revisá la nueva puja mínima.`,
+        feedbackTone: "warning"
+    });
+
+    return {
+        message,
+        roomState,
+        stale: !isCurrentRoomContext(roomContext)
+    };
+}
+
+async function loadBidHistory({
+    silent = false,
+    roomContext = getCurrentRoomContext()
+} = {}) {
+    if (!isCurrentRoomContext(roomContext)) {
+        return;
+    }
+
+    const container = document.getElementById("bid-history");
+    const auctionId = roomContext.auctionId;
+    const requestSequence = ++bidHistoryRequestSequence;
+
+    if (!silent) {
+        container.innerHTML = createLoadingState("Cargando historial");
+    }
 
     try {
         const response = await fetch(
-            `${API_BASE_URL}/api/auctions/${activeAuction.id}/bids`,
+            `${API_BASE_URL}/api/auctions/${auctionId}/bids`,
             {
-                cache: "no-store"
+                cache: "no-store",
+                credentials: "include"
             }
         );
 
@@ -465,13 +868,28 @@ async function loadBidHistory() {
             throw new Error(await readApiError(response));
         }
 
-        bidHistory = await response.json();
+        const history = await response.json();
+
+        if (
+            requestSequence !== bidHistoryRequestSequence ||
+            !isCurrentRoomContext(roomContext)
+        ) {
+            return;
+        }
+
+        bidHistory = history;
         renderBidHistory();
     } catch (error) {
-        container.innerHTML = createErrorState(
-            "No se pudo cargar el historial",
-            error.message
-        );
+        if (
+            requestSequence === bidHistoryRequestSequence &&
+            isCurrentRoomContext(roomContext) &&
+            !silent
+        ) {
+            container.innerHTML = createErrorState(
+                "No se pudo cargar el historial",
+                error.message
+            );
+        }
     }
 }
 
@@ -506,40 +924,125 @@ function renderBidHistory() {
 async function placeBid(event) {
     event.preventDefault();
 
-    const button = document.getElementById("place-bid-button");
-    const amount = Number(document.getElementById("bid-amount").value);
+    if (
+        !activeAuction ||
+        !bidSubmissionCoordinator ||
+        bidSubmissionCoordinator.isSubmitting ||
+        bidUiState.phase === "submitting"
+    ) {
+        return;
+    }
 
-    button.disabled = true;
-    button.textContent = "Procesando…";
+    const roomContext = getCurrentRoomContext();
+    let request;
 
     try {
-        const response = await fetch(
-            `${API_BASE_URL}/api/auctions/${activeAuction.id}/bids`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    monto: amount
-                })
-            }
+        request = biddingCore.buildBidRequest(
+            API_BASE_URL,
+            roomContext.auctionId,
+            document.getElementById("bid-amount").value
         );
+    } catch (error) {
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "BID_FAILED",
+            message: error.message
+        });
+        renderBidInteraction();
+        showToast("Puja rechazada", error.message, "danger");
+        return;
+    }
+
+    cancelBidStateRetry();
+    invalidateBidStateRequest();
+    bidHistoryRequestSequence += 1;
+    bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+        type: "BID_SUBMITTING"
+    });
+    renderBidInteraction();
+    activeBidSubmissionContext = roomContext;
+
+    try {
+        const result = await bidSubmissionCoordinator.submit(request);
+
+        if (
+            result.kind === "duplicate" ||
+            !isCurrentRoomContext(roomContext)
+        ) {
+            return;
+        }
+
+        if (result.kind === "conflict") {
+            if (!result.refreshResult.stale) {
+                showBidError(409, result.refreshResult.message);
+            }
+            return;
+        }
+
+        const response = result.response;
 
         if (!response.ok) {
             const message = await readApiError(response);
+
+            if (!isCurrentRoomContext(roomContext)) {
+                return;
+            }
+
+            bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+                type: "BID_FAILED",
+                message
+            });
+            renderBidInteraction();
             showBidError(response.status, message);
             return;
         }
 
         const bid = await response.json();
+
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
         applyBid(bid);
-        showToast("Puja confirmada", `Tu oferta de ${money(bid.monto)} fue registrada.`, "success");
+        const confirmation =
+            `Tu oferta de ${money(bid.monto)} fue registrada.`;
+
+        bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+            type: "BID_SUCCEEDED",
+            message: confirmation
+        });
+        renderBidInteraction();
+
+        await loadBidRoomState({
+            roomContext,
+            skipLoadingState: true,
+            forceSuggestedAmount: true,
+            feedbackMessage: confirmation,
+            feedbackTone: "success"
+        });
+
+        if (isCurrentRoomContext(roomContext)) {
+            showToast("Puja confirmada", confirmation, "success");
+        }
     } catch (error) {
-        showToast("Error inesperado", error.message, "danger");
+        if (isCurrentRoomContext(roomContext)) {
+            bidUiState = biddingCore.reduceBidUiState(bidUiState, {
+                type: "BID_FAILED",
+                message: error.message
+            });
+            renderBidInteraction();
+            showToast("Error inesperado", error.message, "danger");
+        }
     } finally {
-        button.textContent = "⚒  Realizar puja";
-        updateAuctionAvailability();
+        if (activeBidSubmissionContext === roomContext) {
+            activeBidSubmissionContext = null;
+        }
+
+        if (isCurrentRoomContext(roomContext)) {
+            updateAuctionAvailability();
+            flushDeferredPersonalStateRefresh(roomContext);
+        } else if (activeAuction) {
+            updateAuctionAvailability();
+        }
     }
 }
 
@@ -561,25 +1064,18 @@ function applyBid(bid) {
     }
 
     activeAuction.currentBid = bid.precioActual;
-   
     activeAuction.endDateUtc = bid.fechaFinUtc;
-
-    const catalogAuction = catalogAuctions.find(auction => {
-        return auction.id === bid.subastaId;
-    });
-
-    if (catalogAuction) {
-        catalogAuction.currentBid = bid.precioActual;
-        catalogAuction.endDateUtc = bid.fechaFinUtc;
-
-        const price = document.querySelector(
-            `[data-auction-card-id="${bid.subastaId}"] [data-auction-price]`
+    activeAuction.nextMinimum = bid.pujaMinimaSiguiente ??
+        biddingCore.calculateSuggestedBid(
+            bid.precioActual,
+            activeAuction.minimumIncrement
         );
 
-        if (price) {
-            price.textContent = money(bid.precioActual);
-        }
+    if (bid.incrementoMinimo !== undefined) {
+        activeAuction.minimumIncrement = bid.incrementoMinimo;
     }
+
+    updateCatalogAuctionSnapshot(activeAuction);
 
     if (!bidHistory.some(existingBid => existingBid.id === bid.id)) {
         bidHistory.push({
@@ -603,63 +1099,216 @@ function applyBid(bid) {
     }
 }
 
+function updateCatalogAuctionSnapshot(sourceAuction) {
+    const catalogAuction = catalogAuctions.find(auction => {
+        return auction.id === sourceAuction.id;
+    });
+
+    if (catalogAuction) {
+        catalogAuction.currentBid = sourceAuction.currentBid;
+        catalogAuction.minimumIncrement = sourceAuction.minimumIncrement;
+        catalogAuction.nextMinimum = sourceAuction.nextMinimum;
+        catalogAuction.endDateUtc = sourceAuction.endDateUtc;
+        catalogAuction.status = sourceAuction.status;
+
+        const price = document.querySelector(
+            `[data-auction-card-id="${sourceAuction.id}"] [data-auction-price]`
+        );
+
+        if (price) {
+            price.textContent = money(sourceAuction.currentBid);
+        }
+    }
+}
+
 
 /* =========================
    SIGNALR
    ========================= */
 
-async function connectToAuctionHub() {
+async function connectToAuctionHub(
+    roomContext = getCurrentRoomContext()
+) {
     const connectionStatus = document.getElementById("connection-status");
 
+    if (!isCurrentRoomContext(roomContext)) {
+        return;
+    }
+
     if (!window.signalR) {
-        connectionStatus.textContent = "Sin conexión en vivo";
+        connectionStatus.textContent = "Actualizando cada 5 s";
+        startBidPolling();
         return;
     }
 
     if (!hubConnection) {
         hubConnection = new signalR.HubConnectionBuilder()
-            .withUrl(`${API_BASE_URL}/hubs/auctions`)
+            .withUrl(`${API_BASE_URL}/hubs/auctions`, {
+                withCredentials: true
+            })
             .withAutomaticReconnect()
             .build();
 
-        hubConnection.on("BidPlaced", applyBid);
+        hubConnection.on("BidPlaced", bid => {
+            void handleRealtimeBidPlaced(bid);
+        });
         hubConnection.on("AuctionStateChanged", applyAuctionState);
         hubConnection.onreconnecting(() => {
             connectionStatus.textContent = "Reconectando…";
+            startBidPolling();
         });
-        hubConnection.onreconnected(async () => {
-            connectionStatus.textContent = "Conectado";
-
-            if (activeAuction) {
-                await hubConnection.invoke("JoinAuction", activeAuction.id);
-                joinedAuctionId = activeAuction.id;
-                await loadBidHistory();
-            }
+        hubConnection.onreconnected(() => {
+            void handleAuctionHubReconnected(connectionStatus);
         });
         hubConnection.onclose(() => {
-            connectionStatus.textContent = "Desconectado";
+            connectionStatus.textContent = "Actualizando cada 5 s";
+            startBidPolling();
         });
     }
 
     try {
+        const auctionId = roomContext.auctionId;
+
         if (hubConnection.state === signalR.HubConnectionState.Disconnected) {
             await hubConnection.start();
         }
 
-        if (joinedAuctionId && joinedAuctionId !== activeAuction.id) {
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
+        if (joinedAuctionId && joinedAuctionId !== auctionId) {
             await hubConnection.invoke("LeaveAuction", joinedAuctionId);
         }
 
-        if (joinedAuctionId !== activeAuction.id) {
-            await hubConnection.invoke("JoinAuction", activeAuction.id);
-            joinedAuctionId = activeAuction.id;
+        if (joinedAuctionId !== auctionId) {
+            await hubConnection.invoke("JoinAuction", auctionId);
+            joinedAuctionId = auctionId;
         }
 
         connectionStatus.textContent = "Conectado";
+        stopBidPolling();
     } catch (error) {
-        connectionStatus.textContent = "Sin conexión en vivo";
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
+        connectionStatus.textContent = "Actualizando cada 5 s";
+        startBidPolling();
         showToast("Tiempo real no disponible", error.message, "warning");
     }
+}
+
+async function handleAuctionHubReconnected(connectionStatus) {
+    connectionStatus.textContent = "Conectado";
+    stopBidPolling();
+
+    if (!activeAuction) {
+        return;
+    }
+
+    const roomContext = getCurrentRoomContext();
+    const auctionId = roomContext.auctionId;
+
+    try {
+        await hubConnection.invoke("JoinAuction", auctionId);
+
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
+        joinedAuctionId = auctionId;
+        await Promise.all([
+            loadBidHistory({
+                roomContext,
+                silent: true
+            }),
+            loadBidRoomState({
+                roomContext,
+                skipLoadingState: true
+            })
+        ]);
+    } catch (error) {
+        if (!isCurrentRoomContext(roomContext)) {
+            return;
+        }
+
+        connectionStatus.textContent = "Actualizando cada 5 s";
+        startBidPolling();
+        showToast("Reconexión incompleta", error.message, "warning");
+    }
+}
+
+async function handleRealtimeBidPlaced(bid) {
+    if (!activeAuction || bid.subastaId !== activeAuction.id) {
+        return;
+    }
+
+    const roomContext = getCurrentRoomContext();
+
+    cancelBidStateRetry();
+    invalidateBidStateRequest();
+    bidHistoryRequestSequence += 1;
+
+    if (!isCurrentRoomContext(roomContext)) {
+        return;
+    }
+
+    applyBid(bid);
+
+    if (
+        bidSubmissionCoordinator?.isSubmitting ||
+        ["submitting", "refreshing"].includes(bidUiState.phase)
+    ) {
+        deferPersonalStateRefresh(roomContext);
+        return;
+    }
+
+    await loadBidRoomState({
+        roomContext,
+        skipLoadingState: true
+    });
+}
+
+function startBidPolling() {
+    if (!activeAuction || bidPollingTimer) {
+        return;
+    }
+
+    cancelBidStateRetry();
+    bidPollingTimer = window.setInterval(async () => {
+        if (
+            !activeAuction ||
+            bidPollingInProgress ||
+            bidSubmissionCoordinator?.isSubmitting
+        ) {
+            return;
+        }
+
+        bidPollingInProgress = true;
+        const roomContext = getCurrentRoomContext();
+
+        try {
+            await Promise.all([
+                loadBidRoomState({
+                    roomContext,
+                    skipLoadingState: true
+                }),
+                loadBidHistory({
+                    roomContext,
+                    silent: true
+                })
+            ]);
+        } finally {
+            bidPollingInProgress = false;
+        }
+    }, BID_POLL_INTERVAL_MS);
+}
+
+function stopBidPolling() {
+    window.clearInterval(bidPollingTimer);
+    bidPollingTimer = null;
+    bidPollingInProgress = false;
 }
 
 function applyAuctionState(update) {
@@ -675,21 +1324,30 @@ function applyAuctionState(update) {
 async function leaveLiveRoom() {
     window.clearInterval(countdownTimer);
     countdownTimer = null;
+    stopBidPolling();
+    cancelBidStateRetry();
+    invalidateBidStateRequest();
+    bidHistoryRequestSequence += 1;
+    liveRoomGeneration += 1;
+    deferredPersonalStateRefresh = null;
 
-    if (
-        joinedAuctionId &&
-        hubConnection?.state === signalR.HubConnectionState.Connected
-    ) {
-        try {
-            await hubConnection.invoke("LeaveAuction", joinedAuctionId);
-        } catch {
-            // La reconexión automática resolverá la membresía del grupo.
-        }
-    }
+    const auctionIdToLeave = joinedAuctionId;
 
     joinedAuctionId = null;
     activeAuction = null;
     bidHistory = [];
+    bidUiState = biddingCore.createBidUiState();
+
+    if (
+        auctionIdToLeave &&
+        hubConnection?.state === window.signalR?.HubConnectionState.Connected
+    ) {
+        try {
+            await hubConnection.invoke("LeaveAuction", auctionIdToLeave);
+        } catch {
+            // La reconexión automática resolverá la membresía del grupo.
+        }
+    }
 }
 
 
@@ -712,7 +1370,8 @@ async function loadWalletBalance() {
         const response = await fetch(
             walletUrl,
             {
-                cache: "no-store"
+                cache: "no-store",
+                credentials: "include"
             }
         );
 
@@ -790,11 +1449,7 @@ function configureVisualControls() {
    ========================= */
 
 function money(value) {
-    return new Intl.NumberFormat("es-AR", {
-        style: "currency",
-        currency: "ARS",
-        maximumFractionDigits: 2
-    }).format(value);
+    return biddingCore.formatMoney(value);
 }
 
 function getRemainingMilliseconds(endDateUtc) {

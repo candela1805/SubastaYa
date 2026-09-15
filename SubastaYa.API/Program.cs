@@ -6,6 +6,7 @@ using SubastaYa.API.Services;
 using SubastaYa.API.Hubs;
 using SubastaYa.API.Workers;
 using SubastaYa.API.Authentication;
+using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,8 @@ builder.Services
     .AddControllers()
     .AddJsonOptions(options =>
     {
+        options.JsonSerializerOptions.Converters.Add(
+            new DecimalStringJsonConverter());
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter());
     });
@@ -59,7 +62,13 @@ builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSignalR();
+builder.Services
+    .AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(
+            new DecimalStringJsonConverter());
+    });
 builder.Services.AddHostedService<AuctionStateWorker>();
 
 var app = builder.Build();

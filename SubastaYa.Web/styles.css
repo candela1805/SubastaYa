@@ -893,7 +893,7 @@ select:focus-visible {
 
 .live-summary-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
     gap: 12px;
 }
 
@@ -919,6 +919,15 @@ select:focus-visible {
     font-size: 21px;
 }
 
+.next-bid-item strong {
+    color: var(--blue);
+}
+
+.end-date-item strong {
+    font-size: 14px;
+    line-height: 1.35;
+}
+
 .countdown-item strong {
     font-variant-numeric: tabular-nums;
 }
@@ -931,9 +940,61 @@ select:focus-visible {
     color: #d81920;
 }
 
+.bidder-status {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    gap: 7px;
+    margin-top: 18px;
+    padding: 7px 11px;
+    color: #475467;
+    background: #f2f4f7;
+    border: 1px solid #e4e7ec;
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.bidder-status-dot {
+    width: 8px;
+    height: 8px;
+    background: #98a2b3;
+    border-radius: 50%;
+}
+
+.bidder-status[data-state="leading"] {
+    color: #067647;
+    background: #ecfdf3;
+    border-color: #abefc6;
+}
+
+.bidder-status[data-state="leading"] .bidder-status-dot {
+    background: #17b26a;
+}
+
+.bidder-status[data-state="outbid"] {
+    color: #b54708;
+    background: #fffaeb;
+    border-color: #fedf89;
+}
+
+.bidder-status[data-state="outbid"] .bidder-status-dot {
+    background: #f79009;
+}
+
+.bidder-status[data-state="loading"] .bidder-status-dot {
+    animation: pulse-status 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-status {
+    50% {
+        opacity: .35;
+        transform: scale(.75);
+    }
+}
+
 .bid-form {
     padding-top: 20px;
-    margin-top: 20px;
+    margin-top: 12px;
     border-top: 1px solid var(--line);
 }
 
@@ -976,6 +1037,26 @@ select:focus-visible {
     display: block;
     margin-top: 7px;
     color: var(--muted);
+}
+
+.bid-feedback {
+    min-height: 18px;
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.bid-feedback[data-tone="success"] {
+    color: #067647;
+}
+
+.bid-feedback[data-tone="warning"] {
+    color: #b54708;
+}
+
+.bid-feedback[data-tone="error"] {
+    color: #b42318;
 }
 
 .bid-history-card {
