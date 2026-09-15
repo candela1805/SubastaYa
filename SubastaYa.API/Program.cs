@@ -141,3 +141,5 @@ app.MapControllers();
 app.MapHub<AuctionHub>("/hubs/auctions");
 
 app.Run();
+
+public partial class Program;

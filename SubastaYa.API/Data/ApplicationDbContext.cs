@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SubastaYa.API.Models;
 
 namespace SubastaYa.API.Data;
@@ -20,15 +21,33 @@ public sealed class ApplicationDbContext : DbContext
 
     public override int SaveChanges()
     {
+        return SaveChanges(acceptAllChangesOnSuccess: true);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
         ValidarAuditoriaAppendOnly();
-        return base.SaveChanges();
+        ActualizarVersionesParaProveedoresSinRowVersion();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(
         CancellationToken cancellationToken = default)
     {
+        return SaveChangesAsync(
+            acceptAllChangesOnSuccess: true,
+            cancellationToken);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
         ValidarAuditoriaAppendOnly();
-        return base.SaveChangesAsync(cancellationToken);
+        ActualizarVersionesParaProveedoresSinRowVersion();
+        return base.SaveChangesAsync(
+            acceptAllChangesOnSuccess,
+            cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -68,9 +87,8 @@ public sealed class ApplicationDbContext : DbContext
                 .HasConversion<string>()
                 .HasMaxLength(20);
 
-            entity.Property(subasta => subasta.Version)
-                .IsRowVersion()
-                .IsConcurrencyToken();
+            ConfigurarTokenDeConcurrencia(
+                entity.Property(subasta => subasta.Version));
 
             entity.HasIndex(subasta => subasta.FechaFinUtc);
             entity.HasIndex(subasta => subasta.Estado);
@@ -125,9 +143,8 @@ public sealed class ApplicationDbContext : DbContext
             entity.Property(billetera => billetera.SaldoDisponible)
                 .HasPrecision(18, 2);
 
-            entity.Property(billetera => billetera.Version)
-                .IsRowVersion()
-                .IsConcurrencyToken();
+            ConfigurarTokenDeConcurrencia(
+                entity.Property(billetera => billetera.Version));
 
             entity.HasIndex(billetera => billetera.UsuarioId)
                 .IsUnique();
@@ -235,6 +252,42 @@ public sealed class ApplicationDbContext : DbContext
         {
             throw new InvalidOperationException(
                 "Los registros de auditoría son inmutables.");
+        }
+    }
+
+    private void ConfigurarTokenDeConcurrencia(
+        PropertyBuilder<byte[]> property)
+    {
+        if (Database.IsSqlServer())
+        {
+            property.IsRowVersion().IsConcurrencyToken();
+            return;
+        }
+
+        property
+            .IsConcurrencyToken()
+            .ValueGeneratedNever();
+    }
+
+    private void ActualizarVersionesParaProveedoresSinRowVersion()
+    {
+        if (Database.IsSqlServer())
+        {
+            return;
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Subasta>()
+                     .Where(entry => entry.State is EntityState.Added or EntityState.Modified))
+        {
+            entry.Property(subasta => subasta.Version).CurrentValue =
+                Guid.NewGuid().ToByteArray();
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Billetera>()
+                     .Where(entry => entry.State is EntityState.Added or EntityState.Modified))
+        {
+            entry.Property(billetera => billetera.Version).CurrentValue =
+                Guid.NewGuid().ToByteArray();
         }
     }
 }
