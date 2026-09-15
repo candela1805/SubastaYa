@@ -92,9 +92,6 @@ public sealed class AuctionClosingService : IAuctionClosingService
                 .Where(bid =>
                     bid.SubastaId == auctionId &&
                     bid.EsGanadora)
-                .OrderByDescending(bid => bid.Monto)
-                .ThenBy(bid => bid.FechaUtc)
-                .ThenBy(bid => bid.Id)
                 .Take(2)
                 .ToListAsync(cancellationToken);
 
@@ -148,12 +145,12 @@ public sealed class AuctionClosingService : IAuctionClosingService
 
             var winningBid = winningBids[0];
             endDateUtc = auction.FechaFinUtc;
-            var highestBidAmount = await _dbContext.Pujas
+            var bidAmounts = await _dbContext.Pujas
                 .AsNoTracking()
                 .Where(bid => bid.SubastaId == auctionId)
-                .OrderByDescending(bid => bid.Monto)
                 .Select(bid => bid.Monto)
-                .FirstAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
+            var highestBidAmount = bidAmounts.Max();
 
             if (winningBid.Monto != highestBidAmount ||
                 winningBid.Monto != auction.PrecioActual ||
