@@ -302,6 +302,57 @@ public sealed class BidServiceTests
         await AssertDatabaseUnchangedAsync(database);
     }
 
+    [Fact]
+    public async Task Failure_after_releasing_leader_rolls_back_the_whole_bid()
+    {
+        await using var database = await BidTestDatabase.CreateAsync();
+        await database.SeedLeadingBidAsync(
+            BidTestDatabase.BidderOneId,
+            110m);
+
+        await using (var setup = database.CreateContext())
+        {
+            await setup.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TRIGGER FailReplacementBidInsert
+                BEFORE INSERT ON Pujas
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced replacement bid failure');
+                END;
+                """);
+        }
+
+        await using var context = database.CreateContext();
+
+        await Assert.ThrowsAsync<DbUpdateException>(() =>
+            database.CreateService(context).PlaceBidAsync(
+                BidTestDatabase.AuctionId,
+                BidTestDatabase.BidderTwoId,
+                new PlaceBidRequest { Monto = 120m }));
+
+        await using var verification = database.CreateContext();
+        var auction = await verification.Subastas.SingleAsync();
+        var originalLeader = await verification.Pujas.SingleAsync();
+        var originalWallet = await verification.Billeteras.SingleAsync(
+            item => item.UsuarioId == BidTestDatabase.BidderOneId);
+        var challengerWallet = await verification.Billeteras.SingleAsync(
+            item => item.UsuarioId == BidTestDatabase.BidderTwoId);
+        var ledger = await verification.TransaccionLedgers.ToListAsync();
+
+        Assert.Equal(110m, auction.PrecioActual);
+        Assert.True(originalLeader.EsGanadora);
+        Assert.Equal(BidTestDatabase.BidderOneId, originalLeader.UsuarioId);
+        Assert.Equal(1_000m, originalWallet.SaldoTotal);
+        Assert.Equal(110m, originalWallet.SaldoRetenido);
+        Assert.Equal(890m, originalWallet.SaldoDisponible);
+        Assert.Equal(1_000m, challengerWallet.SaldoTotal);
+        Assert.Equal(0m, challengerWallet.SaldoRetenido);
+        Assert.Equal(1_000m, challengerWallet.SaldoDisponible);
+        Assert.Single(ledger);
+        Assert.Equal(TipoMovimientoBilletera.Retencion, ledger[0].Tipo);
+        Assert.Empty(await verification.AuditoriaLogs.ToListAsync());
+    }
+
     private static async Task AssertDatabaseUnchangedAsync(
         BidTestDatabase database,
         decimal bidderOneBalance = 1_000m)
