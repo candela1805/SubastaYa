@@ -41,6 +41,8 @@ public sealed class Subasta
 
     public EstadoSubasta Estado {  get; set; }
 
+    public LiquidacionSubasta? Liquidacion { get; set; }
+
     // SQL Server genera un nuevo valor en cada INSERT o UPDATE.
     [Timestamp]
     public byte[] Version { get; set; } = Array.Empty<byte>();

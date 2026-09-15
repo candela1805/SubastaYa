@@ -21,8 +21,7 @@ public interface IAuctionService
         CreateAuctionRequest request,
         CancellationToken cancellationToken = default);
 
-    Task CambiarEstadoAsync(
+    Task ActivarAsync(
         Guid subastaId,
-        EstadoSubasta nuevoEstado,
         CancellationToken cancellationToken = default);
 }

@@ -11,6 +11,10 @@ public sealed class TransaccionLedger
 
     public Billetera Billetera { get; set; } = null!;
 
+    public Guid? LiquidacionSubastaId { get; set; }
+
+    public LiquidacionSubasta? LiquidacionSubasta { get; set; }
+
     public TipoMovimientoBilletera Tipo { get; set; }
 
     [Column(TypeName = "decimal(18,2)")]

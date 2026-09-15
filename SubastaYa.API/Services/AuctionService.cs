@@ -128,9 +128,8 @@ public sealed class AuctionService : IAuctionService
         return MapearRespuesta(subasta);
     }
 
-    public async Task CambiarEstadoAsync(
+    public async Task ActivarAsync(
         Guid subastaId,
-        EstadoSubasta nuevoEstado,
         CancellationToken cancellationToken = default)
     {
         var subasta = await _dbContext.Subastas
@@ -143,34 +142,10 @@ public sealed class AuctionService : IAuctionService
 
         var ahora = _timeProvider.GetUtcNow();
         var estadoAnterior = subasta.Estado;
+        var nuevoEstado = EstadoSubasta.Activa;
 
-        if (nuevoEstado == EstadoSubasta.Activa &&
-            (estadoAnterior != EstadoSubasta.Programada ||
-             subasta.FechaInicioUtc > ahora))
-        {
-            return;
-        }
-
-        if (nuevoEstado is EstadoSubasta.Finalizada or EstadoSubasta.Desierta)
-        {
-            if (estadoAnterior != EstadoSubasta.Activa ||
-                subasta.FechaFinUtc > ahora)
-            {
-                return;
-            }
-
-            var tienePujas = await _dbContext.Pujas
-                .AsNoTracking()
-                .AnyAsync(
-                    puja => puja.SubastaId == subastaId,
-                    cancellationToken);
-
-            nuevoEstado = tienePujas
-                ? EstadoSubasta.Finalizada
-                : EstadoSubasta.Desierta;
-        }
-
-        if (estadoAnterior == nuevoEstado)
+        if (estadoAnterior != EstadoSubasta.Programada ||
+            subasta.FechaInicioUtc > ahora)
         {
             return;
         }

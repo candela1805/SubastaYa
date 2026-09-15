@@ -77,9 +77,8 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
 
             try
             {
-                var resultingState = await ChangeStateAsync(
+                var resultingState = await ActivateAuctionAsync(
                     auctionId,
-                    EstadoSubasta.Activa,
                     cancellationToken);
 
                 if (resultingState == EstadoSubasta.Activa)
@@ -108,16 +107,15 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
 
             try
             {
-                var resultingState = await ChangeStateAsync(
+                var result = await CloseAuctionAsync(
                     auctionId,
-                    EstadoSubasta.Finalizada,
                     cancellationToken);
 
-                if (resultingState == EstadoSubasta.Finalizada)
+                if (result.Outcome == AuctionClosingOutcome.Finalized)
                 {
                     finalized += 1;
                 }
-                else if (resultingState == EstadoSubasta.Desierta)
+                else if (result.Outcome == AuctionClosingOutcome.Deserted)
                 {
                     deserted += 1;
                 }
@@ -146,9 +144,8 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
             errors);
     }
 
-    private async Task<EstadoSubasta?> ChangeStateAsync(
+    private async Task<EstadoSubasta?> ActivateAuctionAsync(
         Guid auctionId,
-        EstadoSubasta requestedState,
         CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -157,9 +154,8 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
         var dbContext = scope.ServiceProvider
             .GetRequiredService<ApplicationDbContext>();
 
-        await auctionService.CambiarEstadoAsync(
+        await auctionService.ActivarAsync(
             auctionId,
-            requestedState,
             cancellationToken);
 
         return await dbContext.Subastas
@@ -167,5 +163,18 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
             .Where(auction => auction.Id == auctionId)
             .Select(auction => (EstadoSubasta?)auction.Estado)
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<AuctionClosingResult> CloseAuctionAsync(
+        Guid auctionId,
+        CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var closingService = scope.ServiceProvider
+            .GetRequiredService<IAuctionClosingService>();
+
+        return await closingService.ProcessAsync(
+            auctionId,
+            cancellationToken);
     }
 }

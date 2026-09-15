@@ -18,6 +18,8 @@ public sealed class ApplicationDbContext : DbContext
     public DbSet<TransaccionLedger> TransaccionLedgers => Set<TransaccionLedger>();
     public DbSet<Puja> Pujas => Set<Puja>();
     public DbSet<AuditoriaLog> AuditoriaLogs => Set<AuditoriaLog>();
+    public DbSet<LiquidacionSubasta> LiquidacionesSubasta =>
+        Set<LiquidacionSubasta>();
 
     public override int SaveChanges()
     {
@@ -193,9 +195,61 @@ public sealed class ApplicationDbContext : DbContext
                 .HasForeignKey(transaccion => transaccion.BilleteraId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasOne(transaccion => transaccion.LiquidacionSubasta)
+                .WithMany(liquidacion => liquidacion.Movimientos)
+                .HasForeignKey(transaccion => transaccion.LiquidacionSubastaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasIndex(transaccion => transaccion.BilleteraId);
 
             entity.HasIndex(transaccion => transaccion.FechaUtc);
+        });
+
+        modelBuilder.Entity<LiquidacionSubasta>(entity =>
+        {
+            entity.ToTable("LiquidacionesSubasta");
+
+            entity.HasKey(liquidacion => liquidacion.Id);
+
+            entity.Property(liquidacion => liquidacion.ImporteFinal)
+                .HasPrecision(18, 2);
+
+            entity.Property(liquidacion => liquidacion.FechaAdjudicacionUtc)
+                .IsRequired();
+
+            entity.Property(liquidacion => liquidacion.FechaLiquidacionUtc)
+                .IsRequired();
+
+            entity.HasOne(liquidacion => liquidacion.Subasta)
+                .WithOne(subasta => subasta.Liquidacion)
+                .HasForeignKey<LiquidacionSubasta>(
+                    liquidacion => liquidacion.SubastaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(liquidacion => liquidacion.PujaGanadora)
+                .WithMany()
+                .HasForeignKey(liquidacion => liquidacion.PujaGanadoraId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(liquidacion => liquidacion.Comprador)
+                .WithMany()
+                .HasForeignKey(liquidacion => liquidacion.CompradorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(liquidacion => liquidacion.Vendedor)
+                .WithMany()
+                .HasForeignKey(liquidacion => liquidacion.VendedorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(liquidacion => liquidacion.SubastaId)
+                .IsUnique();
+
+            entity.HasIndex(liquidacion => liquidacion.PujaGanadoraId)
+                .IsUnique();
+
+            entity.HasIndex(liquidacion => liquidacion.CompradorId);
+
+            entity.HasIndex(liquidacion => liquidacion.VendedorId);
         });
 
         modelBuilder.Entity<Puja>(entity =>
