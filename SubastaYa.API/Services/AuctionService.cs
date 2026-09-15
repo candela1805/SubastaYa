@@ -11,15 +11,18 @@ public sealed class AuctionService : IAuctionService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IHubContext<AuctionHub> _hubContext;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<AuctionService> _logger;
 
     public AuctionService(
         ApplicationDbContext dbContext,
         IHubContext<AuctionHub> hubContext,
+        TimeProvider timeProvider,
         ILogger<AuctionService> logger)
     {
         _dbContext = dbContext;
         _hubContext = hubContext;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -99,7 +102,7 @@ public sealed class AuctionService : IAuctionService
         CreateAuctionRequest request,
         CancellationToken cancellationToken = default)
     {
-        var ahora = DateTimeOffset.UtcNow;
+        var ahora = _timeProvider.GetUtcNow();
         var subasta = new Subasta
         {
             VendedorId = vendedorId,
@@ -138,7 +141,7 @@ public sealed class AuctionService : IAuctionService
             throw new KeyNotFoundException("la subasta no existe.");
         }
 
-        var ahora = DateTimeOffset.UtcNow;
+        var ahora = _timeProvider.GetUtcNow();
         var estadoAnterior = subasta.Estado;
 
         if (nuevoEstado == EstadoSubasta.Activa &&
@@ -180,7 +183,7 @@ public sealed class AuctionService : IAuctionService
             SubastaId = subastaId,
             TipoEvento = "AuctionStateChanged",
             Detalle = $"Estado cambiado de {estadoAnterior} a {nuevoEstado}",
-            FechaUtc = DateTimeOffset.UtcNow
+            FechaUtc = ahora
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);

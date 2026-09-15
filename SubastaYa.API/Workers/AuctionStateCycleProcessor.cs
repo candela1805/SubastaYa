@@ -1,0 +1,171 @@
+using Microsoft.EntityFrameworkCore;
+using SubastaYa.API.Data;
+using SubastaYa.API.Models;
+using SubastaYa.API.Services;
+
+namespace SubastaYa.API.Workers;
+
+public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<AuctionStateCycleProcessor> _logger;
+
+    public AuctionStateCycleProcessor(
+        IServiceScopeFactory scopeFactory,
+        TimeProvider timeProvider,
+        ILogger<AuctionStateCycleProcessor> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    public async Task<AuctionStateCycleResult> ProcessCycleAsync(
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(batchSize),
+                "El tamaño del lote debe ser mayor a cero.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = _timeProvider.GetUtcNow();
+        IReadOnlyList<Guid> scheduledAuctionIds;
+        IReadOnlyList<Guid> expiredAuctionIds;
+
+        using (var discoveryScope = _scopeFactory.CreateScope())
+        {
+            var dbContext = discoveryScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+            scheduledAuctionIds = await dbContext.Subastas
+                .AsNoTracking()
+                .Where(auction =>
+                    auction.Estado == EstadoSubasta.Programada &&
+                    auction.FechaInicioUtc <= now)
+                .OrderBy(auction => auction.FechaInicioUtc)
+                .ThenBy(auction => auction.Id)
+                .Select(auction => auction.Id)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken);
+
+            expiredAuctionIds = await dbContext.Subastas
+                .AsNoTracking()
+                .Where(auction =>
+                    auction.Estado == EstadoSubasta.Activa &&
+                    auction.FechaFinUtc <= now)
+                .OrderBy(auction => auction.FechaFinUtc)
+                .ThenBy(auction => auction.Id)
+                .Select(auction => auction.Id)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken);
+        }
+
+        var activated = 0;
+        var finalized = 0;
+        var deserted = 0;
+        var errors = 0;
+
+        foreach (var auctionId in scheduledAuctionIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var resultingState = await ChangeStateAsync(
+                    auctionId,
+                    EstadoSubasta.Activa,
+                    cancellationToken);
+
+                if (resultingState == EstadoSubasta.Activa)
+                {
+                    activated += 1;
+                }
+            }
+            catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                errors += 1;
+                _logger.LogError(
+                    exception,
+                    "No se pudo activar la subasta {AuctionId}.",
+                    auctionId);
+            }
+        }
+
+        foreach (var auctionId in expiredAuctionIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var resultingState = await ChangeStateAsync(
+                    auctionId,
+                    EstadoSubasta.Finalizada,
+                    cancellationToken);
+
+                if (resultingState == EstadoSubasta.Finalizada)
+                {
+                    finalized += 1;
+                }
+                else if (resultingState == EstadoSubasta.Desierta)
+                {
+                    deserted += 1;
+                }
+            }
+            catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                errors += 1;
+                _logger.LogError(
+                    exception,
+                    "No se pudo procesar la subasta vencida {AuctionId}.",
+                    auctionId);
+            }
+        }
+
+        return new AuctionStateCycleResult(
+            scheduledAuctionIds.Count,
+            activated,
+            expiredAuctionIds.Count,
+            finalized,
+            deserted,
+            errors);
+    }
+
+    private async Task<EstadoSubasta?> ChangeStateAsync(
+        Guid auctionId,
+        EstadoSubasta requestedState,
+        CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var auctionService = scope.ServiceProvider
+            .GetRequiredService<IAuctionService>();
+        var dbContext = scope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+        await auctionService.CambiarEstadoAsync(
+            auctionId,
+            requestedState,
+            cancellationToken);
+
+        return await dbContext.Subastas
+            .AsNoTracking()
+            .Where(auction => auction.Id == auctionId)
+            .Select(auction => (EstadoSubasta?)auction.Estado)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+}

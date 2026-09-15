@@ -63,6 +63,20 @@ builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services
+    .AddOptions<AuctionClosingWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(
+        AuctionClosingWorkerOptions.SectionName))
+    .Validate(
+        options => options.IntervalSeconds > 0,
+        "AuctionClosingWorker:IntervalSeconds debe ser mayor a cero.")
+    .Validate(
+        options => options.BatchSize is > 0 and <= 500,
+        "AuctionClosingWorker:BatchSize debe estar entre 1 y 500.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    IAuctionStateCycleProcessor,
+    AuctionStateCycleProcessor>();
+builder.Services
     .AddSignalR()
     .AddJsonProtocol(options =>
     {
