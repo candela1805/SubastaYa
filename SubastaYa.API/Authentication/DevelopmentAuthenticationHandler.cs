@@ -27,28 +27,51 @@ public sealed class DevelopmentAuthenticationHandler
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        if (!Guid.TryParse(Options.UserId, out var userId))
+        var configuredUserId = Options.UserId;
+
+        if (Request.Headers.TryGetValue("X-User-Id", out var headerUserId))
+        {
+            configuredUserId = headerUserId.ToString();
+        }
+
+        if (!Guid.TryParse(configuredUserId, out var userId) ||
+            userId == Guid.Empty)
         {
             return Task.FromResult(
                 AuthenticateResult.Fail(
                     "El usuario configurado para DevelopmentAuthentication no es válido."));
         }
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-            new Claim(ClaimTypes.Name, Options.Name),
-            new Claim(ClaimTypes.Email, Options.Email)
+            new(ClaimTypes.NameIdentifier, userId.ToString())
         };
+
+        if (Guid.TryParse(Options.UserId, out var demoUserId) &&
+            userId == demoUserId)
+        {
+            claims.Add(new Claim(ClaimTypes.Name, Options.Name));
+            claims.Add(new Claim(ClaimTypes.Email, Options.Email));
+        }
+        else
+        {
+            // Identidad ficticia de pruebas: no atribuirle el email del demo.
+            claims.Add(new Claim(
+                ClaimTypes.Name,
+                $"Usuario de prueba {userId}"));
+        }
 
         var identity = new ClaimsIdentity(
             claims,
             DevelopmentAuthenticationDefaults.AuthenticationScheme);
+
         var principal = new ClaimsPrincipal(identity);
+
         var ticket = new AuthenticationTicket(
             principal,
             DevelopmentAuthenticationDefaults.AuthenticationScheme);
 
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        return Task.FromResult(
+            AuthenticateResult.Success(ticket));
     }
 }
