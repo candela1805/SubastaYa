@@ -2,7 +2,7 @@
 
 public sealed class WalletConcurrencyException : Exception
 {
-    public WalletConcurrencyException(string message) : 
+    public WalletConcurrencyException(string message) :
         base(message)
     {
     }

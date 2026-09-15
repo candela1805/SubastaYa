@@ -24,7 +24,7 @@ public sealed class Subasta
 
     [Required]
     [MaxLength(100)]
-    public string Categoria {  get; set; } = string.Empty;
+    public string Categoria { get; set; } = string.Empty;
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrecioInicial { get; set; }
@@ -33,13 +33,13 @@ public sealed class Subasta
     public decimal PrecioActual { get; set; }
 
     [Column(TypeName = "decimal(18,2)")]
-    public decimal IncrementoMinimo {  get; set; }
+    public decimal IncrementoMinimo { get; set; }
 
     public DateTimeOffset FechaInicioUtc { get; set; }
 
     public DateTimeOffset FechaFinUtc { get; set; }
 
-    public EstadoSubasta Estado {  get; set; }
+    public EstadoSubasta Estado { get; set; }
 
     public LiquidacionSubasta? Liquidacion { get; set; }
 

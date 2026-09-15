@@ -14,13 +14,13 @@ public sealed class Billetera
     public decimal SaldoTotal { get; set; }
 
     [Column(TypeName = "decimal(18,2)")]
-    public decimal SaldoRetenido {  get; set; }
+    public decimal SaldoRetenido { get; set; }
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal SaldoDisponible { get; set; }
-    
+
     [Timestamp]
     public byte[] Version { get; set; } = Array.Empty<byte>();
 
-    
+
 }

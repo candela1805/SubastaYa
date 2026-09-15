@@ -2,7 +2,7 @@
 
 public class BidResponse
 {
-    public Guid Id { get; set; }   
+    public Guid Id { get; set; }
     public Guid SubastaId { get; set; }
     public decimal Monto { get; set; }
     public string Pseudonimo { get; set; } = string.Empty;
