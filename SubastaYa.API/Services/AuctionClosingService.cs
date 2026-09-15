@@ -9,6 +9,13 @@ namespace SubastaYa.API.Services;
 
 public sealed class AuctionClosingService : IAuctionClosingService
 {
+    private const string SettlementAuditKeyPrefix = "auction:settled:";
+    private const string DesertedAuditKeyPrefix = "auction:deserted:";
+    private const string BuyerPaymentKeyPrefix =
+        "auction:settlement:payment:";
+    private const string SellerCollectionKeyPrefix =
+        "auction:settlement:collection:";
+
     private readonly ApplicationDbContext _dbContext;
     private readonly IHubContext<AuctionHub> _hubContext;
     private readonly TimeProvider _timeProvider;
@@ -119,6 +126,8 @@ public sealed class AuctionClosingService : IAuctionClosingService
                     TipoEvento = "AuctionDeserted",
                     Detalle =
                         "Estado anterior: Activa; estado nuevo: Desierta; motivo: vencimiento sin ofertas; origen: AuctionStateWorker.",
+                    ClaveIdempotencia =
+                        $"{DesertedAuditKeyPrefix}{auctionId}",
                     FechaUtc = closingTime
                 });
 
@@ -232,6 +241,8 @@ public sealed class AuctionClosingService : IAuctionClosingService
                     Id = Guid.NewGuid(),
                     BilleteraId = buyerWallet.Id,
                     LiquidacionSubastaId = settlement.Id,
+                    ClaveIdempotencia =
+                        $"{BuyerPaymentKeyPrefix}{auctionId}",
                     Tipo = TipoMovimientoBilletera.Pago,
                     Monto = amount,
                     Descripcion =
@@ -243,6 +254,8 @@ public sealed class AuctionClosingService : IAuctionClosingService
                     Id = Guid.NewGuid(),
                     BilleteraId = sellerWallet.Id,
                     LiquidacionSubastaId = settlement.Id,
+                    ClaveIdempotencia =
+                        $"{SellerCollectionKeyPrefix}{auctionId}",
                     Tipo = TipoMovimientoBilletera.Cobro,
                     Monto = amount,
                     Descripcion =
@@ -256,6 +269,8 @@ public sealed class AuctionClosingService : IAuctionClosingService
                 TipoEvento = "AuctionSettled",
                 Detalle =
                     $"Subasta adjudicada y liquidada. Liquidación: {settlement.Id}; puja: {winningBid.Id}; comprador: {winningBid.UsuarioId}; vendedor: {sellerId}; importe: {amount:F2}; origen: AuctionStateWorker.",
+                ClaveIdempotencia =
+                    $"{SettlementAuditKeyPrefix}{auctionId}",
                 FechaUtc = closingTime
             });
 
@@ -266,6 +281,42 @@ public sealed class AuctionClosingService : IAuctionClosingService
                 auctionId,
                 AuctionClosingOutcome.Finalized,
                 settlement.Id);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            await RollbackSafelyAsync(transaction);
+
+            _logger.LogWarning(
+                exception,
+                "La subasta {AuctionId} cambió durante su cierre; se volverá a evaluar en otro ciclo.",
+                auctionId);
+
+            return new AuctionClosingResult(
+                auctionId,
+                AuctionClosingOutcome.ConcurrencyConflict);
+        }
+        catch (DbUpdateException exception)
+        when (IsIdempotencyConflict(exception))
+        {
+            await RollbackSafelyAsync(transaction);
+            await transaction.DisposeAsync();
+            _dbContext.ChangeTracker.Clear();
+
+            if (!await IsAlreadyProcessedAsync(
+                    auctionId,
+                    CancellationToken.None))
+            {
+                throw;
+            }
+
+            _logger.LogInformation(
+                exception,
+                "La subasta {AuctionId} ya fue procesada por otra instancia; no se repite la liquidación.",
+                auctionId);
+
+            return new AuctionClosingResult(
+                auctionId,
+                AuctionClosingOutcome.AlreadyProcessed);
         }
         catch
         {
@@ -292,6 +343,105 @@ public sealed class AuctionClosingService : IAuctionClosingService
         {
             // Se preserva la excepción original; DisposeAsync completa la limpieza.
         }
+    }
+
+    private static bool IsIdempotencyConflict(
+        DbUpdateException exception)
+    {
+        var error = exception.ToString();
+
+        return error.Contains(
+                "UX_LiquidacionesSubasta_SubastaId",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "UX_LiquidacionesSubasta_PujaGanadoraId",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "UX_TransaccionesLedger_LiquidacionSubastaId_Tipo",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "UX_TransaccionesLedger_ClaveIdempotencia",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "UX_AuditoriaLogs_ClaveIdempotencia",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "LiquidacionesSubasta.SubastaId",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "LiquidacionesSubasta.PujaGanadoraId",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "TransaccionesLedger.ClaveIdempotencia",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "TransaccionesLedger.LiquidacionSubastaId, TransaccionesLedger.Tipo",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "AuditoriaLogs.ClaveIdempotencia",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> IsAlreadyProcessedAsync(
+        Guid auctionId,
+        CancellationToken cancellationToken)
+    {
+        var state = await _dbContext.Subastas
+            .AsNoTracking()
+            .Where(auction => auction.Id == auctionId)
+            .Select(auction => (EstadoSubasta?)auction.Estado)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (state == EstadoSubasta.Desierta)
+        {
+            var hasDesertedAudit = await _dbContext.AuditoriaLogs
+                .AsNoTracking()
+                .AnyAsync(
+                    audit => audit.ClaveIdempotencia ==
+                        $"{DesertedAuditKeyPrefix}{auctionId}",
+                    cancellationToken);
+            var hasSettlement = await _dbContext.LiquidacionesSubasta
+                .AsNoTracking()
+                .AnyAsync(
+                    settlement => settlement.SubastaId == auctionId,
+                    cancellationToken);
+
+            return hasDesertedAudit && !hasSettlement;
+        }
+
+        if (state != EstadoSubasta.Finalizada)
+        {
+            return false;
+        }
+
+        var settlementId = await _dbContext.LiquidacionesSubasta
+            .AsNoTracking()
+            .Where(settlement => settlement.SubastaId == auctionId)
+            .Select(settlement => (Guid?)settlement.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (!settlementId.HasValue)
+        {
+            return false;
+        }
+
+        var movements = await _dbContext.TransaccionLedgers
+            .AsNoTracking()
+            .Where(movement =>
+                movement.LiquidacionSubastaId == settlementId.Value)
+            .Select(movement => movement.Tipo)
+            .ToListAsync(cancellationToken);
+        var hasSettlementAudit = await _dbContext.AuditoriaLogs
+            .AsNoTracking()
+            .AnyAsync(
+                audit => audit.ClaveIdempotencia ==
+                    $"{SettlementAuditKeyPrefix}{auctionId}",
+                cancellationToken);
+
+        return movements.Count == 2 &&
+            movements.Contains(TipoMovimientoBilletera.Pago) &&
+            movements.Contains(TipoMovimientoBilletera.Cobro) &&
+            hasSettlementAudit;
     }
 
     private async Task NotifyStateChangedAsync(

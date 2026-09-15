@@ -314,6 +314,11 @@ public sealed class BidService : IBidService
             if (pujaAnterior is not null)
             {
                 pujaAnterior.EsGanadora = false;
+
+                // La baja del líder anterior se persiste dentro de la misma
+                // transacción antes de insertar el nuevo. Así se respeta el
+                // índice único filtrado que permite una sola puja ganadora.
+                await _context.SaveChangesAsync(cancellationToken);
             }
 
             billetera.SaldoRetenido += montoARequerir;
@@ -394,13 +399,24 @@ public sealed class BidService : IBidService
         catch (DbUpdateConcurrencyException)
         {
             await transaction.RollbackAsync(CancellationToken.None);
+            _context.ChangeTracker.Clear();
 
             throw new BidConcurrencyException(
                 "La subasta cambió mientras se procesaba la puja. Actualizá los datos e intentá nuevamente.");
         }
+        catch (DbUpdateException exception)
+        when (EsConflictoDePujaGanadora(exception))
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            _context.ChangeTracker.Clear();
+
+            throw new BidConcurrencyException(
+                "Otra puja tomó el liderazgo mientras se procesaba la solicitud. Actualizá los datos e intentá nuevamente.");
+        }
         catch
         {
             await transaction.RollbackAsync(CancellationToken.None);
+            _context.ChangeTracker.Clear();
             throw;
         }
 
@@ -451,6 +467,19 @@ public sealed class BidService : IBidService
         }
 
         return subasta.PrecioActual + subasta.IncrementoMinimo;
+    }
+
+    private static bool EsConflictoDePujaGanadora(
+        DbUpdateException exception)
+    {
+        var error = exception.ToString();
+
+        return error.Contains(
+                "UX_Pujas_SubastaId_Ganadora",
+                StringComparison.OrdinalIgnoreCase) ||
+            error.Contains(
+                "UNIQUE constraint failed: Pujas.SubastaId",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task NotificarPujaAsync(

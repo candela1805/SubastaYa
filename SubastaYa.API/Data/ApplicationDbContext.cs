@@ -28,7 +28,7 @@ public sealed class ApplicationDbContext : DbContext
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        ValidarAuditoriaAppendOnly();
+        ValidarEntidadesAppendOnly();
         ActualizarVersionesParaProveedoresSinRowVersion();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
@@ -45,7 +45,7 @@ public sealed class ApplicationDbContext : DbContext
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        ValidarAuditoriaAppendOnly();
+        ValidarEntidadesAppendOnly();
         ActualizarVersionesParaProveedoresSinRowVersion();
         return base.SaveChangesAsync(
             acceptAllChangesOnSuccess,
@@ -94,6 +94,20 @@ public sealed class ApplicationDbContext : DbContext
 
             entity.HasIndex(subasta => subasta.FechaFinUtc);
             entity.HasIndex(subasta => subasta.Estado);
+            entity.HasIndex(subasta => new
+            {
+                subasta.Estado,
+                subasta.FechaFinUtc,
+                subasta.Id
+            })
+                .HasDatabaseName("IX_Subastas_Estado_FechaFinUtc_Id");
+            entity.HasIndex(subasta => new
+            {
+                subasta.Estado,
+                subasta.FechaInicioUtc,
+                subasta.Id
+            })
+                .HasDatabaseName("IX_Subastas_Estado_FechaInicioUtc_Id");
             entity.HasIndex(subasta => subasta.Categoria);
             entity.HasIndex(subasta => subasta.PrecioActual);
 
@@ -190,10 +204,13 @@ public sealed class ApplicationDbContext : DbContext
             entity.Property(transaccion => transaccion.FechaUtc)
                 .IsRequired();
 
+            entity.Property(transaccion => transaccion.ClaveIdempotencia)
+                .HasMaxLength(150);
+
             entity.HasOne(transaccion => transaccion.Billetera)
                 .WithMany()
                 .HasForeignKey(transaccion => transaccion.BilleteraId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(transaccion => transaccion.LiquidacionSubasta)
                 .WithMany(liquidacion => liquidacion.Movimientos)
@@ -203,6 +220,26 @@ public sealed class ApplicationDbContext : DbContext
             entity.HasIndex(transaccion => transaccion.BilleteraId);
 
             entity.HasIndex(transaccion => transaccion.FechaUtc);
+
+            entity.HasIndex(transaccion => new
+            {
+                transaccion.LiquidacionSubastaId,
+                transaccion.Tipo
+            })
+                .HasDatabaseName(
+                    "UX_TransaccionesLedger_LiquidacionSubastaId_Tipo")
+                .IsUnique()
+                .HasFilter("[LiquidacionSubastaId] IS NOT NULL");
+
+            entity.HasIndex(transaccion => transaccion.ClaveIdempotencia)
+                .HasDatabaseName(
+                    "UX_TransaccionesLedger_ClaveIdempotencia")
+                .IsUnique()
+                .HasFilter("[ClaveIdempotencia] IS NOT NULL");
+
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_TransaccionesLedger_MontoPositivo",
+                "[Monto] > 0"));
         });
 
         modelBuilder.Entity<LiquidacionSubasta>(entity =>
@@ -242,14 +279,21 @@ public sealed class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(liquidacion => liquidacion.SubastaId)
+                .HasDatabaseName("UX_LiquidacionesSubasta_SubastaId")
                 .IsUnique();
 
             entity.HasIndex(liquidacion => liquidacion.PujaGanadoraId)
+                .HasDatabaseName(
+                    "UX_LiquidacionesSubasta_PujaGanadoraId")
                 .IsUnique();
 
             entity.HasIndex(liquidacion => liquidacion.CompradorId);
 
             entity.HasIndex(liquidacion => liquidacion.VendedorId);
+
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_LiquidacionesSubasta_ImporteFinalPositivo",
+                "[ImporteFinal] > 0"));
         });
 
         modelBuilder.Entity<Puja>(entity =>
@@ -261,7 +305,10 @@ public sealed class ApplicationDbContext : DbContext
 
                 entity.HasIndex(p => new { p.SubastaId, p.FechaUtc });
 
-                entity.HasIndex(p => new { p.SubastaId, p.EsGanadora });
+                entity.HasIndex(p => p.SubastaId)
+                    .HasDatabaseName("UX_Pujas_SubastaId_Ganadora")
+                    .IsUnique()
+                    .HasFilter("[EsGanadora] = 1");
 
                 entity.HasOne(p => p.Subasta)
                     .WithMany()
@@ -286,7 +333,15 @@ public sealed class ApplicationDbContext : DbContext
             .IsRequired()
             .HasMaxLength(1000);
 
+            entity.Property(a => a.ClaveIdempotencia)
+                .HasMaxLength(150);
+
             entity.HasIndex(a => new { a.SubastaId, a.FechaUtc });
+
+            entity.HasIndex(a => a.ClaveIdempotencia)
+                .HasDatabaseName("UX_AuditoriaLogs_ClaveIdempotencia")
+                .IsUnique()
+                .HasFilter("[ClaveIdempotencia] IS NOT NULL");
 
             entity.HasOne(a => a.Subasta)
             .WithMany()
@@ -296,7 +351,7 @@ public sealed class ApplicationDbContext : DbContext
         });
     }
 
-    private void ValidarAuditoriaAppendOnly()
+    private void ValidarEntidadesAppendOnly()
     {
         var auditoriaAlterada = ChangeTracker
             .Entries<AuditoriaLog>()
@@ -306,6 +361,26 @@ public sealed class ApplicationDbContext : DbContext
         {
             throw new InvalidOperationException(
                 "Los registros de auditoría son inmutables.");
+        }
+
+        var ledgerAlterado = ChangeTracker
+            .Entries<TransaccionLedger>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+
+        if (ledgerAlterado)
+        {
+            throw new InvalidOperationException(
+                "Los movimientos del Ledger son inmutables.");
+        }
+
+        var liquidacionAlterada = ChangeTracker
+            .Entries<LiquidacionSubasta>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+
+        if (liquidacionAlterada)
+        {
+            throw new InvalidOperationException(
+                "Las liquidaciones de subasta son inmutables.");
         }
     }
 

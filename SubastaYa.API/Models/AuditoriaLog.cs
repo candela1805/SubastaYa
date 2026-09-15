@@ -14,6 +14,10 @@ public class AuditoriaLog
     [Required]
     [MaxLength(1000)]
     public string Detalle { get; set; } = string.Empty;
+
+    [MaxLength(150)]
+    public string? ClaveIdempotencia { get; set; }
+
     public DateTimeOffset FechaUtc { get; set; } = DateTimeOffset.UtcNow;
     public Subasta Subasta { get; set; } = null!;
 }

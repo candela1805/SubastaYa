@@ -65,12 +65,14 @@ public sealed class AuctionStateWorker : BackgroundService
                 stoppingToken);
 
             _logger.LogInformation(
-                "Ciclo automático finalizado. Programadas encontradas: {ScheduledFound}; activadas: {Activated}; vencidas encontradas: {ExpiredFound}; finalizadas: {Finalized}; desiertas: {Deserted}; errores: {Errors}.",
+                "Ciclo automático finalizado. Programadas encontradas: {ScheduledFound}; activadas: {Activated}; vencidas encontradas: {ExpiredFound}; finalizadas: {Finalized}; desiertas: {Deserted}; omitidas: {Skipped}; conflictos: {Conflicts}; errores: {Errors}.",
                 result.ScheduledAuctionsFound,
                 result.AuctionsActivated,
                 result.ExpiredAuctionsFound,
                 result.AuctionsFinalized,
                 result.AuctionsDeserted,
+                result.AuctionsSkipped,
+                result.ConcurrencyConflicts,
                 result.Errors);
         }
         catch (OperationCanceledException)

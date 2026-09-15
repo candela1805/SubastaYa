@@ -6,4 +6,6 @@ public sealed record AuctionStateCycleResult(
     int ExpiredAuctionsFound,
     int AuctionsFinalized,
     int AuctionsDeserted,
+    int AuctionsSkipped,
+    int ConcurrencyConflicts,
     int Errors);

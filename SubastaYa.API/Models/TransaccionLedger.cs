@@ -15,6 +15,9 @@ public sealed class TransaccionLedger
 
     public LiquidacionSubasta? LiquidacionSubasta { get; set; }
 
+    [MaxLength(150)]
+    public string? ClaveIdempotencia { get; set; }
+
     public TipoMovimientoBilletera Tipo { get; set; }
 
     [Column(TypeName = "decimal(18,2)")]

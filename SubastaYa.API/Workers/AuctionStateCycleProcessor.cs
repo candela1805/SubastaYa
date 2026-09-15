@@ -69,6 +69,8 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
         var activated = 0;
         var finalized = 0;
         var deserted = 0;
+        var skipped = 0;
+        var concurrencyConflicts = 0;
         var errors = 0;
 
         foreach (var auctionId in scheduledAuctionIds)
@@ -119,6 +121,15 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
                 {
                     deserted += 1;
                 }
+                else if (result.Outcome ==
+                    AuctionClosingOutcome.ConcurrencyConflict)
+                {
+                    concurrencyConflicts += 1;
+                }
+                else
+                {
+                    skipped += 1;
+                }
             }
             catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -141,6 +152,8 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
             expiredAuctionIds.Count,
             finalized,
             deserted,
+            skipped,
+            concurrencyConflicts,
             errors);
     }
 
