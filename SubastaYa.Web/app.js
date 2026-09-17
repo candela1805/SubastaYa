@@ -9,6 +9,11 @@ const BID_POLL_INTERVAL_MS = 5000;
 const BID_STATE_REQUEST_TIMEOUT_MS = 8000;
 const BID_STATE_RETRY_DELAYS_MS = [1000, 2500, 5000];
 const NEW_CATEGORY_VALUE = "__new_category__";
+const PAYMENT_METHODS = [
+    { id: "card", icon: "▣", name: "Tarjeta de débito/crédito", description: "Acreditación representativa con tarjeta." },
+    { id: "transfer", icon: "⇄", name: "Transferencia bancaria", description: "Transferencia desde una cuenta bancaria." },
+    { id: "deposit", icon: "$", name: "Depósito", description: "Depósito representativo de fondos." }
+];
 const biddingCore = window.SubastaYaBidding;
 
 if (!biddingCore) {
@@ -24,6 +29,9 @@ const auctionStateNames = {
 
 let catalogAuctions = [];
 let availableCategories = [];
+let walletTransactions = [];
+let walletSection = "summary";
+let preferredPaymentMethod = "card";
 let myPublications = [];
 let publicationFilter = "all";
 let publicationPendingDeletion = null;
@@ -65,6 +73,7 @@ function getAuthenticatedRequestOptions(options = {}) {
 
 document.addEventListener("DOMContentLoaded", async () => {
     renderDevelopmentUser();
+    configureWallet();
     configureCategoryControls();
     await loadCategories();
 
@@ -152,7 +161,7 @@ async function handleRoute(scroll = true) {
     showView(view, scroll);
 
     if (view === "wallet") {
-        await loadWalletBalance();
+        await loadWalletSection(walletSection);
     }
 
     if (view === "activities") {
@@ -1416,9 +1425,7 @@ async function loadWalletBalance() {
 
         const balance = await response.json();
 
-        total.textContent = money(balance.total);
-        retained.textContent = money(balance.retenido);
-        available.textContent = money(balance.disponible);
+        renderWalletBalance(balance);
     } catch (error) {
         if (total) {
             total.textContent = "$ —";
@@ -1438,6 +1445,620 @@ async function loadWalletBalance() {
             "danger"
         );
     }
+}
+
+async function loadWalletTransactions() {
+    ["wallet-recent-movements", "wallet-all-movements"].forEach(id => {
+        const container = document.getElementById(id);
+        if (container) {
+            container.innerHTML = createLoadingState("Cargando movimientos");
+        }
+    });
+
+    const response = await fetch(
+        `${API_BASE_URL}/api/wallet/transactions`,
+        getAuthenticatedRequestOptions({ cache: "no-store" })
+    );
+
+    if (!response.ok) {
+        throw new Error(await readApiError(response));
+    }
+
+    walletTransactions = await response.json();
+    renderWalletMovements(
+        document.getElementById("wallet-recent-movements"),
+        walletTransactions.slice(0, 4)
+    );
+    renderWalletMovements(
+        document.getElementById("wallet-all-movements"),
+        walletTransactions
+    );
+}
+
+async function loadRetainedFunds() {
+    const container = document.getElementById("wallet-retained-list");
+    container.innerHTML = createLoadingState("Cargando fondos retenidos");
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/wallet/retained-funds`,
+            getAuthenticatedRequestOptions({ cache: "no-store" })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        renderRetainedFunds(await response.json());
+    } catch (error) {
+        container.innerHTML = createErrorState(
+            "No se pudieron cargar los fondos retenidos",
+            error.message
+        );
+    }
+}
+
+async function loadWalletSection(section) {
+    if (section === "summary") {
+        await Promise.all([
+            loadWalletBalance(),
+            loadWalletTransactions().catch(error => {
+                renderWalletMovementError(error);
+            })
+        ]);
+        return;
+    }
+
+    if (section === "transactions") {
+        try {
+            await loadWalletTransactions();
+        } catch (error) {
+            renderWalletMovementError(error);
+        }
+        return;
+    }
+
+    if (section === "retained") {
+        await loadRetainedFunds();
+    }
+}
+
+function configureWallet() {
+    try {
+        preferredPaymentMethod = localStorage.getItem(
+            "subastaya-wallet-method"
+        ) || "card";
+        if (!PAYMENT_METHODS.some(method => method.id === preferredPaymentMethod)) {
+            preferredPaymentMethod = "card";
+        }
+    } catch {
+        preferredPaymentMethod = "card";
+    }
+
+    document.querySelectorAll("[data-wallet-target]").forEach(button => {
+        button.addEventListener("click", async () => {
+            await showWalletSection(button.dataset.walletTarget);
+        });
+    });
+
+    document.querySelectorAll("[data-deposit-form]").forEach(form => {
+        populatePaymentSelect(form.elements.metodo);
+        renderPaymentFlow(form);
+        form.addEventListener("submit", submitWalletDeposit);
+        form.elements.monto.addEventListener("input", () => {
+            updatePaymentFlowAmount(form);
+            updateDepositButton(form);
+        });
+        form.elements.metodo.addEventListener("change", () => {
+            renderPaymentFlow(form);
+            updateDepositButton(form);
+        });
+        form.querySelectorAll("[data-amount]").forEach(button => {
+            button.addEventListener("click", () => {
+                form.querySelectorAll("[data-amount]").forEach(item => {
+                    item.classList.toggle("selected", item === button);
+                });
+                form.elements.monto.value = button.dataset.amount;
+                if (!button.dataset.amount) {
+                    form.elements.monto.focus();
+                }
+                updateDepositButton(form);
+            });
+        });
+        updateDepositButton(form);
+    });
+
+    renderPaymentMethods();
+}
+
+async function showWalletSection(section) {
+    walletSection = section;
+    document.querySelectorAll("[data-wallet-section]").forEach(panel => {
+        panel.classList.toggle("active", panel.dataset.walletSection === section);
+    });
+    document.querySelectorAll(".wallet-side-nav [data-wallet-target]").forEach(button => {
+        button.classList.toggle("active", button.dataset.walletTarget === section);
+    });
+    await loadWalletSection(section);
+}
+
+function populatePaymentSelect(select) {
+    select.replaceChildren(new Option("Seleccionar método", ""));
+    PAYMENT_METHODS.forEach(method => {
+        select.add(new Option(method.name, method.id));
+    });
+    select.value = preferredPaymentMethod;
+}
+
+function updateDepositButton(form) {
+    const amount = Number(form.elements.monto.value);
+    const button = form.querySelector("button[type='submit']");
+    const simulationFields = [
+        ...form.querySelectorAll("[data-payment-flow] input[required]")
+    ];
+    button.disabled = !(
+        Number.isFinite(amount) &&
+        amount > 0 &&
+        form.elements.metodo.value &&
+        simulationFields.every(input => input.checkValidity())
+    );
+}
+
+async function submitWalletDeposit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const amount = Number(form.elements.monto.value);
+    const method = form.elements.metodo.value;
+
+    form.elements.monto.setCustomValidity(
+        Number.isFinite(amount) && amount > 0
+            ? ""
+            : "Ingresá un monto mayor a cero."
+    );
+    form.elements.metodo.setCustomValidity(
+        method ? "" : "Seleccioná un método de pago."
+    );
+
+    if (!form.reportValidity()) {
+        return;
+    }
+
+    if (!validatePaymentSimulation(form, method)) {
+        showToast(
+            "Revisá los datos ingresados",
+            "Completá correctamente los datos de la simulación.",
+            "warning"
+        );
+        return;
+    }
+
+    const button = form.querySelector("button[type='submit']");
+    const status = form.querySelector("[data-payment-status]");
+    button.disabled = true;
+    const messages = paymentFlowMessages(method);
+    button.textContent = messages.processing;
+    status.innerHTML = `<span class="payment-spinner"></span>${messages.processing}`;
+
+    try {
+        await waitForPaymentSimulation();
+        const response = await fetch(
+            `${API_BASE_URL}/api/wallet/deposit`,
+            getAuthenticatedRequestOptions({
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ monto: amount })
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        const balance = await response.json();
+        renderWalletBalance(balance);
+        await loadWalletTransactions();
+        status.innerHTML = `<span class="payment-success">✓</span>${messages.success}`;
+        clearSensitivePaymentFields(form);
+        form.reset();
+        form.elements.metodo.value = preferredPaymentMethod;
+        form.querySelectorAll("[data-amount]").forEach(item => {
+            item.classList.remove("selected");
+        });
+        renderPaymentFlow(form);
+        status.innerHTML = `<span class="payment-success">✓</span>${messages.success}`;
+        updateDepositButton(form);
+        showToast(
+            messages.success,
+            `${money(amount)} se acreditaron en tu billetera.`,
+            "success"
+        );
+    } catch (error) {
+        status.textContent = "No pudimos acreditar la operación.";
+        showToast(
+            "No se pudo acreditar",
+            "Intentá nuevamente en unos instantes.",
+            "danger"
+        );
+    } finally {
+        button.textContent = button.dataset.actionLabel;
+        updateDepositButton(form);
+    }
+}
+
+function renderPaymentFlow(form) {
+    const method = form.elements.metodo.value;
+    const container = form.querySelector("[data-payment-flow]");
+    const status = form.querySelector("[data-payment-status]");
+    const amount = Number(form.elements.monto.value) || 0;
+    const submitButton = form.querySelector("button[type='submit']");
+
+    clearSensitivePaymentFields(form);
+    status.textContent = "";
+
+    if (method === "card") {
+        container.innerHTML = `
+            <section class="payment-simulation-card">
+                <h3>Datos de la tarjeta</h3>
+                <div class="card-data-grid">
+                    <label class="wallet-form-field full-width">
+                        <span>Número de tarjeta</span>
+                        <input
+                            name="cardNumber"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            maxlength="19"
+                            placeholder="0000 0000 0000 0000"
+                            pattern="[0-9 ]{19}"
+                            required
+                        >
+                    </label>
+                    <label class="wallet-form-field full-width">
+                        <span>Nombre del titular</span>
+                        <input
+                            name="cardHolder"
+                            autocomplete="off"
+                            maxlength="80"
+                            placeholder="NOMBRE APELLIDO"
+                            required
+                        >
+                    </label>
+                    <label class="wallet-form-field">
+                        <span>Vencimiento</span>
+                        <input
+                            name="cardExpiry"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            maxlength="5"
+                            placeholder="MM/AA"
+                            pattern="(0[1-9]|1[0-2])/[0-9]{2}"
+                            required
+                        >
+                    </label>
+                    <label class="wallet-form-field">
+                        <span>CVV</span>
+                        <input
+                            name="cardCvv"
+                            type="password"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            maxlength="4"
+                            placeholder="000"
+                            pattern="[0-9]{3,4}"
+                            required
+                        >
+                    </label>
+                </div>
+                <small class="academic-warning">
+                    Simulación académica. No ingreses datos bancarios reales.
+                </small>
+                <button type="button" class="payment-cancel" data-cancel-payment>
+                    Cancelar simulación
+                </button>
+            </section>
+        `;
+        configureCardSimulation(form);
+    } else if (method === "transfer") {
+        container.innerHTML = createTransferSimulation(amount);
+        configureCopyButtons(container);
+    } else if (method === "deposit") {
+        container.innerHTML = createDepositSimulation(amount);
+    } else {
+        container.innerHTML = "";
+    }
+
+    submitButton.dataset.actionLabel = {
+        card: "Confirmar pago",
+        transfer: "Ya realicé la transferencia",
+        deposit: "Ya realicé el depósito"
+    }[method] || "Confirmar depósito";
+    submitButton.textContent = submitButton.dataset.actionLabel;
+
+    container.querySelector("[data-cancel-payment]")?.addEventListener(
+        "click",
+        () => cancelPaymentSimulation(form)
+    );
+    container.oninput = () => updateDepositButton(form);
+    updateDepositButton(form);
+}
+
+function configureCardSimulation(form) {
+    const number = form.elements.cardNumber;
+    const expiry = form.elements.cardExpiry;
+    const cvv = form.elements.cardCvv;
+
+    number.addEventListener("input", () => {
+        const digits = number.value.replace(/\D/g, "").slice(0, 16);
+        number.value = digits.replace(/(.{4})/g, "$1 ").trim();
+    });
+    expiry.addEventListener("input", () => {
+        const digits = expiry.value.replace(/\D/g, "").slice(0, 4);
+        expiry.value = digits.length > 2
+            ? `${digits.slice(0, 2)}/${digits.slice(2)}`
+            : digits;
+    });
+    cvv.addEventListener("input", () => {
+        cvv.value = cvv.value.replace(/\D/g, "").slice(0, 4);
+    });
+}
+
+function validatePaymentSimulation(form, method) {
+    if (method !== "card") {
+        return true;
+    }
+
+    const fields = [
+        form.elements.cardNumber,
+        form.elements.cardHolder,
+        form.elements.cardExpiry,
+        form.elements.cardCvv
+    ];
+    fields.forEach(field => field.setCustomValidity(""));
+
+    if (form.elements.cardNumber.value.replace(/\D/g, "").length !== 16) {
+        form.elements.cardNumber.setCustomValidity(
+            "Ingresá los 16 dígitos de la tarjeta."
+        );
+    }
+    if (!form.elements.cardHolder.value.trim()) {
+        form.elements.cardHolder.setCustomValidity("Ingresá el nombre del titular.");
+    }
+
+    const valid = fields.every(field => field.checkValidity());
+    if (!valid) {
+        form.reportValidity();
+    }
+    return valid;
+}
+
+function createTransferSimulation(amount) {
+    const reference = createPaymentReference("SUBASTAYA");
+    return `
+        <section class="payment-simulation-card transfer-simulation">
+            <div>
+                <h3>Datos para la transferencia</h3>
+                <dl class="payment-details">
+                    <div><dt>Titular</dt><dd>SubastaYa</dd></div>
+                    <div><dt>Alias</dt><dd>subastaya.billetera <button type="button" data-copy="subastaya.billetera" data-copy-label="Alias">Copiar</button></dd></div>
+                    <div><dt>CBU demostrativo</dt><dd>0000000000000000000000 <button type="button" data-copy="0000000000000000000000" data-copy-label="CBU">Copiar</button></dd></div>
+                    <div><dt>Importe a transferir</dt><dd data-flow-amount>${money(amount)}</dd></div>
+                    <div><dt>Concepto</dt><dd>${reference}</dd></div>
+                </dl>
+            </div>
+            <div class="demo-qr" aria-label="QR demostrativo"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><small>QR demostrativo</small></div>
+            <button type="button" class="payment-cancel" data-cancel-payment>Cancelar simulación</button>
+        </section>
+    `;
+}
+
+function createDepositSimulation(amount) {
+    return `
+        <section class="payment-simulation-card">
+            <h3>Instrucciones de depósito</h3>
+            <dl class="payment-details">
+                <div><dt>Titular</dt><dd>SubastaYa</dd></div>
+                <div><dt>Importe</dt><dd data-flow-amount>${money(amount)}</dd></div>
+                <div><dt>Código de depósito</dt><dd>${createPaymentReference("DEP")}</dd></div>
+            </dl>
+            <p>Utilizá este código como referencia para identificar tu depósito.</p>
+            <small class="academic-warning">Referencia válida únicamente para esta simulación.</small>
+            <button type="button" class="payment-cancel" data-cancel-payment>Cancelar simulación</button>
+        </section>
+    `;
+}
+
+function updatePaymentFlowAmount(form) {
+    const amount = Number(form.elements.monto.value) || 0;
+    form.querySelectorAll("[data-flow-amount]").forEach(element => {
+        element.textContent = money(amount);
+    });
+}
+
+function createPaymentReference(prefix) {
+    return `${prefix}-${crypto.getRandomValues(new Uint32Array(1))[0]
+        .toString()
+        .slice(0, 6)
+        .padStart(6, "0")}`;
+}
+
+function configureCopyButtons(container) {
+    container.querySelectorAll("[data-copy]").forEach(button => {
+        button.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(button.dataset.copy);
+                showToast(
+                    `${button.dataset.copyLabel} copiado`,
+                    "El dato demostrativo se copió al portapapeles.",
+                    "success"
+                );
+            } catch {
+                showToast(
+                    "No se pudo copiar",
+                    "Seleccioná y copiá el dato manualmente.",
+                    "warning"
+                );
+            }
+        });
+    });
+}
+
+function cancelPaymentSimulation(form) {
+    clearSensitivePaymentFields(form);
+    form.elements.monto.value = "";
+    form.querySelector("[data-payment-status]").textContent = "";
+    form.querySelectorAll("[data-amount]").forEach(item => {
+        item.classList.remove("selected");
+    });
+    renderPaymentFlow(form);
+}
+
+function clearSensitivePaymentFields(form) {
+    ["cardNumber", "cardHolder", "cardExpiry", "cardCvv"].forEach(name => {
+        if (form.elements[name]) {
+            form.elements[name].value = "";
+        }
+    });
+}
+
+function paymentFlowMessages(method) {
+    if (method === "card") {
+        return {
+            processing: "Procesando pago...",
+            success: "Pago acreditado correctamente"
+        };
+    }
+    if (method === "transfer") {
+        return {
+            processing: "Verificando transferencia...",
+            success: "Transferencia acreditada correctamente"
+        };
+    }
+    return {
+        processing: "Verificando depósito...",
+        success: "Depósito acreditado correctamente"
+    };
+}
+
+function waitForPaymentSimulation() {
+    return new Promise(resolve => window.setTimeout(resolve, 800));
+}
+
+function renderWalletBalance(balance) {
+    document.getElementById("wallet-total").textContent = money(balance.total);
+    document.getElementById("wallet-retained").textContent = money(balance.retenido);
+    document.getElementById("wallet-available").textContent = money(balance.disponible);
+}
+
+function renderWalletMovements(container, movements) {
+    if (!container) {
+        return;
+    }
+    if (movements.length === 0) {
+        container.innerHTML = createEmptyState(
+            "Sin movimientos",
+            "Tu actividad financiera aparecerá aquí."
+        );
+        return;
+    }
+    container.innerHTML = movements.map(movement => {
+        const positive = ["Deposito", "Liberacion", "Cobro"].includes(movement.tipo);
+        return `
+            <article class="wallet-list-item">
+                <div>
+                    <strong>${escapeHtml(walletMovementLabel(movement.tipo))}</strong>
+                    <p>${escapeHtml(movement.descripcion)}</p>
+                    <time>${escapeHtml(formatExactDate(movement.fechaUtc))}</time>
+                </div>
+                <b class="${positive ? "positive" : "negative"}">
+                    ${positive ? "+" : "−"}${money(movement.monto)}
+                </b>
+            </article>
+        `;
+    }).join("");
+}
+
+function renderWalletMovementError(error) {
+    ["wallet-recent-movements", "wallet-all-movements"].forEach(id => {
+        const container = document.getElementById(id);
+        if (container) {
+            container.innerHTML = createErrorState(
+                "No se pudieron cargar los movimientos",
+                error.message
+            );
+        }
+    });
+}
+
+function walletMovementLabel(type) {
+    return {
+        Deposito: "Depósito",
+        Retencion: "Retención",
+        Liberacion: "Liberación",
+        Pago: "Pago",
+        Cobro: "Cobro"
+    }[type] || type;
+}
+
+function renderRetainedFunds(response) {
+    const container = document.getElementById("wallet-retained-list");
+    const items = response.items || [];
+    const detail = items.map(item => `
+        <article class="wallet-list-item">
+            <div>
+                <strong>${escapeHtml(item.subasta)}</strong>
+                <p>Puja ${escapeHtml(item.estado.toLowerCase())}</p>
+                <time>${escapeHtml(formatExactDate(item.fechaUtc))}</time>
+            </div>
+            <b>${money(item.monto)}</b>
+        </article>
+    `);
+
+    if (Number(response.diferencia) !== 0) {
+        detail.push(`
+            <article class="wallet-list-item wallet-balance-difference">
+                <div>
+                    <strong>Retención no vinculada a una puja abierta</strong>
+                    <p>Diferencia informada por el saldo de la billetera.</p>
+                </div>
+                <b>${money(response.diferencia)}</b>
+            </article>
+        `);
+    }
+
+    container.innerHTML = detail.length
+        ? `<div class="retained-total">Total retenido: <strong>${money(response.totalRetenido)}</strong></div>${detail.join("")}`
+        : createEmptyState("Sin fondos retenidos", "No tenés fondos comprometidos en pujas.");
+}
+
+function renderPaymentMethods() {
+    const container = document.getElementById("wallet-payment-methods");
+    container.innerHTML = PAYMENT_METHODS.map(method => `
+        <button
+            type="button"
+            class="payment-method-card ${method.id === preferredPaymentMethod ? "selected" : ""}"
+            data-payment-method="${method.id}"
+        >
+            <i>${method.icon}</i>
+            <span><strong>${method.name}</strong><small>${method.description}</small></span>
+            <b>${method.id === preferredPaymentMethod ? "Preferido" : "Elegir"}</b>
+        </button>
+    `).join("");
+    container.querySelectorAll("[data-payment-method]").forEach(button => {
+        button.addEventListener("click", () => {
+            preferredPaymentMethod = button.dataset.paymentMethod;
+            try {
+                localStorage.setItem("subastaya-wallet-method", preferredPaymentMethod);
+            } catch {
+                // La preferencia sigue disponible durante esta sesión.
+            }
+            document.querySelectorAll("[data-deposit-form] select[name='metodo']")
+                .forEach(select => {
+                    select.value = preferredPaymentMethod;
+                    renderPaymentFlow(select.form);
+                    updateDepositButton(select.form);
+                });
+            renderPaymentMethods();
+        });
+    });
 }
 
 
@@ -2011,25 +2632,6 @@ function updatePublicationCounts() {
 }
 
 function configureVisualControls() {
-    document.querySelectorAll(".amount-options button").forEach(button => {
-        button.addEventListener("click", event => {
-            event.preventDefault();
-
-            document.querySelectorAll(".amount-options button").forEach(item => {
-                item.classList.remove("selected");
-            });
-
-            button.classList.add("selected");
-
-            const input = document.getElementById("deposit-amount");
-            input.value = button.dataset.amount;
-
-            if (!button.dataset.amount) {
-                input.focus();
-            }
-        });
-    });
-
     document.querySelectorAll(".tabs").forEach(group => {
         group.querySelectorAll("button").forEach(button => {
             button.addEventListener("click", () => {

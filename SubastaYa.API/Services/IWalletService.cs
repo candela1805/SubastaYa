@@ -12,4 +12,12 @@ public interface IWalletService
         Guid usuarioId,
         decimal monto,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<WalletTransactionResponse>?> ObtenerMovimientosAsync(
+        Guid usuarioId,
+        CancellationToken cancellationToken = default);
+
+    Task<RetainedFundsResponse?> ObtenerFondosRetenidosAsync(
+        Guid usuarioId,
+        CancellationToken cancellationToken = default);
 }
