@@ -2,15 +2,11 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1"
-    >
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
     <title>SubastaYa</title>
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-    >
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -25,48 +21,97 @@
                 <span class="brand-mark">⚖️</span>
                 SubastaYa
             </a>
-            <button
-                class="navbar-toggler"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#navbarNav"
-                aria-label="Abrir navegación"
-            >
+            <button class="navbar-toggler"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#navbarNav"
+                    aria-label="Abrir navegación">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav main-nav mx-auto">
-                    <li>
-                        <a class="nav-link active" href="#catalog" data-view="catalog">
-                            Catálogo
-                        </a>
-                    </li>
-                    <li>
-                        <a class="nav-link" href="#activities" data-view="activities">
-                            Mis Actividades
-                        </a>
-                    </li>
-                    <li>
-                        <a class="nav-link" href="#wallet" data-view="wallet">
-                            Mi Billetera
-                        </a>
-                    </li>
-                </ul>
+                    <ul class="navbar-nav main-nav mx-auto">
+
+                        <li>
+                            <a class="nav-link active"
+                               href="#catalog"
+                               data-view="catalog">
+                                Catálogo
+                            </a>
+                        </li>
+
+                        <li class="auth-only" hidden>
+                            <a class="nav-link"
+                               href="#activities"
+                               data-view="activities">
+                                Mis Actividades
+                            </a>
+                        </li>
+
+                        <li class="auth-only" hidden>
+                            <a class="nav-link"
+                               href="#wallet"
+                               data-view="wallet">
+                                Mi Billetera
+                            </a>
+                        </li>
+
+                    </ul>
                 <div class="user-area">
                     <button class="notification-button" type="button" aria-label="Notificaciones">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
+                            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
                         </svg>
                     </button>
-                    <button class="user-button" type="button" aria-label="Usuario">
-                        <span class="avatar">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"/>
-                            </svg>
-                        </span>
-                        <span id="active-user-name">Usuario</span>
-                        <span aria-hidden="true">⌄</span>
-                    </button>
+
+                    <div class="auth-menu dropdown">
+                        <button id="auth-menu-button"
+                                class="user-button dropdown-toggle"
+                                type="button"
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false"
+                                aria-label="Login">
+                            <span class="avatar">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10" />
+                                </svg>
+                            </span>
+                            <span id="active-user-name">Login</span>
+                        </button>
+
+                            <ul class="dropdown-menu dropdown-menu-end login-dropdown"
+                                aria-labelledby="auth-menu-button">
+
+                                <!-- MENÚ CUANDO NO HAY SESIÓN -->
+                                <li id="guest-menu">
+
+                                    <button class="dropdown-item"
+                                            type="button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#login-modal">
+                                        Ingresar
+                                    </button>
+
+                                    <button class="dropdown-item"
+                                            type="button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#register-modal">
+                                        Crear usuario
+                                    </button>
+
+                                </li>
+
+                                <!-- MENÚ CUANDO EL USUARIO YA INGRESÓ -->
+                                <li id="logged-menu" hidden>
+
+                                    <button id="logout-button"
+                                            class="dropdown-item text-danger"
+                                            type="button">
+                                        Cerrar sesión
+                                    </button>
+
+                                </li>
+
+                            </ul>
                 </div>
             </div>
         </div>
@@ -87,12 +132,10 @@
                 <form class="filter-panel" id="auction-filters">
                     <label class="search-field">
                         <span>⌕</span>
-                        <input
-                            name="buscar"
-                            type="search"
-                            placeholder="Buscar por título..."
-                            aria-label="Buscar por título"
-                        >
+                        <input name="buscar"
+                               type="search"
+                               placeholder="Buscar por título..."
+                               aria-label="Buscar por título">
                     </label>
                     <label class="filter-field">
                         <span>Estado</span>
@@ -179,13 +222,11 @@
                                     <strong id="live-countdown">--:--:--</strong>
                                 </div>
                             </div>
-                            <div
-                                id="bidder-status"
-                                class="bidder-status"
-                                data-state="loading"
-                                role="status"
-                                aria-live="polite"
-                            >
+                            <div id="bidder-status"
+                                 class="bidder-status"
+                                 data-state="loading"
+                                 role="status"
+                                 aria-live="polite">
                                 <span class="bidder-status-dot" aria-hidden="true"></span>
                                 <span>Tu estado:</span>
                                 <strong id="bidder-status-label">Cargando…</strong>
@@ -195,26 +236,22 @@
                                 <div class="bid-input-row">
                                     <label class="bid-amount-input">
                                         <span>$</span>
-                                        <input
-                                            id="bid-amount"
-                                            type="number"
-                                            min="1"
-                                            step="0.01"
-                                            required
-                                            aria-describedby="bid-minimum-help bid-feedback"
-                                        >
+                                        <input id="bid-amount"
+                                               type="number"
+                                               min="1"
+                                               step="0.01"
+                                               required
+                                               aria-describedby="bid-minimum-help bid-feedback">
                                     </label>
                                     <button id="place-bid-button" class="bid-button" type="submit">
                                         ⚒&nbsp; Realizar puja
                                     </button>
                                 </div>
                                 <small id="bid-minimum-help" class="bid-help"></small>
-                                <p
-                                    id="bid-feedback"
-                                    class="bid-feedback"
-                                    role="status"
-                                    aria-live="polite"
-                                ></p>
+                                <p id="bid-feedback"
+                                   class="bid-feedback"
+                                   role="status"
+                                   aria-live="polite"></p>
                             </form>
                         </div>
                     </article>
@@ -260,6 +297,61 @@
                         <h1 class="section-title">Resumen de Saldo</h1>
                         <div class="balance-grid">
                             <article class="balance-card total-card">
+                    <h1 class="section-title">Resumen de Saldo</h1>
+                    <div class="balance-grid">
+                        <article class="balance-card total-card">
+                            <div>
+                                <span>Saldo Total</span>
+                                <strong id="wallet-total">$ —</strong>
+                                <small>Total en tu billetera</small>
+                            </div>
+                            <b>▣</b>
+                        </article>
+                        <article class="balance-card retained-card">
+                            <div>
+                                <span>Saldo Retenido</span>
+                                <strong id="wallet-retained">$ —</strong>
+                                <small>Fondos en garantía</small>
+                            </div>
+                            <b>▢</b>
+                        </article>
+                        <article class="balance-card available-card">
+                            <div>
+                                <span>Saldo Disponible</span>
+                                <strong id="wallet-available">$ —</strong>
+                                <small>Disponible para usar</small>
+                            </div>
+                            <b>✓</b>
+                        </article>
+                    </div>
+                    <div class="wallet-panels">
+                        <article class="content-card">
+                            <h2>Depósito rápido</h2>
+                            <p>Agregar fondos a tu billetera</p>
+                            <div class="amount-options">
+                                <button data-amount="10000">$10.000</button>
+                                <button data-amount="20000">$20.000</button>
+                                <button data-amount="50000">$50.000</button>
+                                <button data-amount="100000">$100.000</button>
+                                <button data-amount="">Otro</button>
+                            </div>
+                            <label class="deposit-input">
+                                <span>$</span>
+                                <input id="deposit-amount"
+                                       type="number"
+                                       min="1"
+                                       placeholder="0"
+                                       aria-label="Monto a depositar">
+                            </label>
+                            <button id="deposit-button" class="primary-action" disabled>
+                                ▣&nbsp; Depositar fondos
+                            </button>
+                            <small class="integration-note">
+                                Se habilitará al integrar la billetera con la API.
+                            </small>
+                        </article>
+                        <article class="content-card">
+                            <div class="card-heading">
                                 <div>
                                     <span>Saldo Total</span>
                                     <strong id="wallet-total">$ —</strong>
@@ -410,11 +502,9 @@
                     <section id="publications" class="publications-section">
                         <header class="publications-heading">
                             <h2 class="section-title">Mis Publicaciones</h2>
-                            <button
-                                id="open-auction-form"
-                                class="primary-action create-auction-button"
-                                type="button"
-                            >
+                            <button id="open-auction-form"
+                                    class="primary-action create-auction-button"
+                                    type="button">
                                 ＋ Crear subasta
                             </button>
                         </header>
@@ -448,13 +538,11 @@
          CREAR SUBASTA
          ========================= -->
 
-    <div
-        class="modal fade"
-        id="auction-form-modal"
-        tabindex="-1"
-        aria-labelledby="auction-form-title"
-        aria-hidden="true"
-    >
+    <div class="modal fade"
+         id="auction-form-modal"
+         tabindex="-1"
+         aria-labelledby="auction-form-title"
+         aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content auction-form-modal">
                 <div class="modal-header">
@@ -462,12 +550,10 @@
                         <h2 class="modal-title" id="auction-form-title">Crear subasta</h2>
                         <p>La publicación quedará asociada a <span id="auction-seller-name"></span>.</p>
                     </div>
-                    <button
-                        class="btn-close"
-                        type="button"
-                        data-bs-dismiss="modal"
-                        aria-label="Cerrar"
-                    ></button>
+                    <button class="btn-close"
+                            type="button"
+                            data-bs-dismiss="modal"
+                            aria-label="Cerrar"></button>
                 </div>
                 <form id="auction-form">
                     <div class="modal-body auction-form-grid">
@@ -481,22 +567,18 @@
                         </label>
                         <label class="form-field">
                             <span>Categoría</span>
-                            <select
-                                name="categoria"
-                                data-category-select
-                                data-placeholder="Seleccionar categoría"
-                                required
-                            >
+                            <select name="categoria"
+                                    data-category-select
+                                    data-placeholder="Seleccionar categoría"
+                                    required>
                                 <option value="">Seleccionar categoría</option>
                             </select>
                         </label>
                         <label class="form-field" data-new-category-field hidden>
                             <span>Nueva categoría</span>
-                            <input
-                                name="nuevaCategoria"
-                                maxlength="100"
-                                placeholder="Nombre de la categoría"
-                            >
+                            <input name="nuevaCategoria"
+                                   maxlength="100"
+                                   placeholder="Nombre de la categoría">
                         </label>
                         <label class="form-field">
                             <span>URL de imagen (opcional)</span>
@@ -536,13 +618,11 @@
          EDITAR PUBLICACIÓN
          ========================= -->
 
-    <div
-        class="modal fade"
-        id="edit-auction-modal"
-        tabindex="-1"
-        aria-labelledby="edit-auction-title"
-        aria-hidden="true"
-    >
+    <div class="modal fade"
+         id="edit-auction-modal"
+         tabindex="-1"
+         aria-labelledby="edit-auction-title"
+         aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content auction-form-modal">
                 <div class="modal-header">
@@ -565,22 +645,18 @@
                         </label>
                         <label class="form-field">
                             <span>Categoría</span>
-                            <select
-                                name="categoria"
-                                data-category-select
-                                data-placeholder="Seleccionar categoría"
-                                required
-                            >
+                            <select name="categoria"
+                                    data-category-select
+                                    data-placeholder="Seleccionar categoría"
+                                    required>
                                 <option value="">Seleccionar categoría</option>
                             </select>
                         </label>
                         <label class="form-field" data-new-category-field hidden>
                             <span>Nueva categoría</span>
-                            <input
-                                name="nuevaCategoria"
-                                maxlength="100"
-                                placeholder="Nombre de la categoría"
-                            >
+                            <input name="nuevaCategoria"
+                                   maxlength="100"
+                                   placeholder="Nombre de la categoría">
                         </label>
                         <label class="form-field">
                             <span>URL de imagen (opcional)</span>
@@ -618,18 +694,19 @@
          ELIMINAR PUBLICACIÓN
          ========================= -->
 
-    <div
-        class="modal fade"
-        id="delete-auction-modal"
-        tabindex="-1"
-        aria-labelledby="delete-auction-title"
-        aria-hidden="true"
-    >
+    <div class="modal fade"
+         id="delete-auction-modal"
+         tabindex="-1"
+         aria-labelledby="delete-auction-title"
+         aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content confirmation-modal">
                 <div class="modal-header">
                     <h2 class="modal-title" id="delete-auction-title">Eliminar publicación</h2>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    <button class="btn-close"
+                            type="button"
+                            data-bs-dismiss="modal"
+                            aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
                     <p>¿Seguro que querés eliminar esta publicación?</p>
@@ -648,19 +725,171 @@
     </div>
 
     <!-- =========================
+         LOGIN
+         ========================= -->
+
+    <div class="modal fade"
+         id="login-modal"
+         tabindex="-1"
+         aria-labelledby="login-modal-title"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content auth-modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="login-modal-title">Ingresar</h2>
+                        <p class="mb-0">Ingresá a tu cuenta de SubastaYa.</p>
+                    </div>
+                    <button class="btn-close"
+                            type="button"
+                            data-bs-dismiss="modal"
+                            aria-label="Cerrar"></button>
+                </div>
+
+                <form id="login-form">
+                    <div class="modal-body auth-form">
+                        <label class="form-field">
+                            <span>Email</span>
+                            <input name="email"
+                                   type="email"
+                                   autocomplete="email"
+                                   placeholder="correo@ejemplo.com"
+                                   required>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Contraseña</span>
+                            <input name="password"
+                                   type="password"
+                                   autocomplete="current-password"
+                                   placeholder="Ingresá tu contraseña"
+                                   required>
+                        </label>
+
+                        <div id="login-feedback"
+                             class="auth-feedback"
+                             role="status"
+                             aria-live="polite"></div>
+                    </div>
+
+                    <div class="modal-footer auth-modal-footer">
+                        <button class="secondary-action"
+                                type="button"
+                                data-bs-target="#register-modal"
+                                data-bs-toggle="modal">
+                            Crear usuario
+                        </button>
+
+                        <button id="login-submit"
+                                class="primary-action"
+                                type="submit">
+                            Ingresar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         CREAR USUARIO
+         ========================= -->
+
+    <div class="modal fade"
+         id="register-modal"
+         tabindex="-1"
+         aria-labelledby="register-modal-title"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content auth-modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="register-modal-title">Crear usuario</h2>
+                        <p class="mb-0">Creá tu cuenta para comenzar a comprar y vender.</p>
+                    </div>
+                    <button class="btn-close"
+                            type="button"
+                            data-bs-dismiss="modal"
+                            aria-label="Cerrar"></button>
+                </div>
+
+                <form id="register-form">
+                    <div class="modal-body auth-form">
+                        <label class="form-field">
+                            <span>Nombre</span>
+                            <input name="nombre"
+                                   type="text"
+                                   maxlength="100"
+                                   autocomplete="name"
+                                   required>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Email</span>
+                            <input name="email"
+                                   type="email"
+                                   autocomplete="email"
+                                   placeholder="correo@ejemplo.com"
+                                   required>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Contraseña</span>
+                            <input name="password"
+                                   type="password"
+                                   minlength="6"
+                                   autocomplete="new-password"
+                                   required>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Repetir contraseña</span>
+                            <input name="confirmPassword"
+                                   type="password"
+                                   minlength="6"
+                                   autocomplete="new-password"
+                                   required>
+                        </label>
+
+                        <div id="register-feedback"
+                             class="auth-feedback"
+                             role="status"
+                             aria-live="polite"></div>
+                    </div>
+
+                    <div class="modal-footer auth-modal-footer">
+                        <button class="secondary-action"
+                                type="button"
+                                data-bs-target="#login-modal"
+                                data-bs-toggle="modal">
+                            Ya tengo cuenta
+                        </button>
+
+                        <button id="register-submit"
+                                class="primary-action"
+                                type="submit">
+                            Crear cuenta
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
          NOTIFICACIONES
          ========================= -->
 
-    <div
-        id="toast-container"
-        class="toast-container position-fixed bottom-0 end-0 p-3"
-        aria-live="polite"
-        aria-atomic="true"
-    ></div>
+    <div id="toast-container"
+         class="toast-container position-fixed bottom-0 end-0 p-3"
+         aria-live="polite"
+         aria-atomic="true"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
     <script src="bidding-core.js"></script>
     <script src="app.js"></script>
+
+    
 </body>
 </html>

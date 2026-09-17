@@ -1,9 +1,9 @@
 const API_BASE_URL = "http://localhost:5000";
-const DEVELOPMENT_USER = {
-    id: "11111111-1111-1111-1111-111111111111",
-    name: "Usuario Demo",
-    email: "demo@subastaya.com"
-};
+const SESSION_STORAGE_KEY =
+    "subastaya_session";
+
+let currentSession =
+    loadUserSession();
 const DEFAULT_AUCTION_IMAGE = createPlaceholderImage();
 const BID_POLL_INTERVAL_MS = 5000;
 const BID_STATE_REQUEST_TIMEOUT_MS = 8000;
@@ -55,14 +55,26 @@ let deferredPersonalStateRefresh = null;
 let bidUiState = biddingCore.createBidUiState();
 const notifiedExtensions = new Set();
 
-function getAuthenticatedRequestOptions(options = {}) {
+function getAuthenticatedRequestOptions(
+    options = {}
+) {
+
+    const headers = {
+        ...(options.headers || {})
+    };
+
+
+    if (currentSession?.userId) {
+
+        headers["X-User-Id"] =
+            currentSession.userId;
+    }
+
+
     return {
         ...options,
         credentials: "include",
-        headers: {
-            ...options.headers,
-            "X-User-Id": DEVELOPMENT_USER.id
-        }
+        headers
     };
 }
 
@@ -72,7 +84,7 @@ function getAuthenticatedRequestOptions(options = {}) {
    ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
-    renderDevelopmentUser();
+    configureAuthentication();
     configureWallet();
     configureCategoryControls();
     await loadCategories();
@@ -97,7 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await loadAuctions();
-});
+});;
 
 
 /* =========================
@@ -135,38 +147,94 @@ function getViewFromHash() {
 
 async function handleRoute(scroll = true) {
 
-    const auctionId = getAuctionIdFromHash();
+    const auctionId =
+        getAuctionIdFromHash();
+
+    const view =
+        getViewFromHash();
+
+
+    // Sin sesión solamente se permite Catálogo.
+    if (
+        !currentSession?.userId &&
+        (
+            auctionId ||
+            view === "activities" ||
+            view === "wallet"
+        )
+    ) {
+
+        await leaveLiveRoom();
+
+        history.replaceState(
+            null,
+            "",
+            "#catalog"
+        );
+
+        showView(
+            "catalog",
+            scroll
+        );
+
+        return;
+    }
+
 
     if (auctionId) {
-        const auction = catalogAuctions.find(item => item.id === auctionId);
+        const auction =
+            catalogAuctions.find(
+                item =>
+                    item.id === auctionId
+            );
+
 
         if (auction) {
-            await openLiveRoom(auction, scroll);
+
+            await openLiveRoom(
+                auction,
+                scroll
+            );
+
             return;
         }
 
+
         await leaveLiveRoom();
-        history.replaceState(null, "", "#catalog");
-        showView("catalog", scroll);
+
+        history.replaceState(
+            null,
+            "",
+            "#catalog"
+        );
+
+        showView(
+            "catalog",
+            scroll
+        );
+
         showToast(
             "Sala no disponible",
             "La subasta ya no existe o ya no se encuentra activa.",
             "warning"
         );
+
         return;
     }
 
-    const view = getViewFromHash();
-
-    showView(view, scroll);
-
+    showView(
+        view,
+        scroll
+    );
     if (view === "wallet") {
         await loadWalletSection(walletSection);
     }
 
+
     if (view === "activities") {
         await loadMyPublications();
     }
+
 
     await leaveLiveRoom();
 }
@@ -428,15 +496,54 @@ function configureLiveRoom() {
 }
 
 async function enterLiveRoom(auctionId) {
-    const auction = catalogAuctions.find(item => item.id === auctionId);
+    if (!currentSession?.userId) {
 
-    if (!canOpenAuction(auction)) {
-        showToast("Puja rechazada", "No se encontró la subasta seleccionada.", "danger");
+        showToast(
+            "Iniciá sesión",
+            "Tenés que ingresar a tu cuenta para participar de una subasta.",
+            "warning"
+        );
+
+        bootstrap.Modal
+            .getOrCreateInstance(
+                document.getElementById(
+                    "login-modal"
+                )
+            )
+            .show();
+
         return;
     }
 
-    history.pushState(null, "", `#auction/${auction.id}`);
-    await openLiveRoom(auction, true);
+
+    const auction =
+        catalogAuctions.find(
+            item => item.id === auctionId
+        );
+
+
+    if (!canOpenAuction(auction)) {
+
+        showToast(
+            "Puja rechazada",
+            "No se encontró la subasta seleccionada.",
+            "danger"
+        );
+
+        return;
+    }
+
+
+    history.pushState(
+        null,
+        "",
+        `#auction/${auction.id}`
+    );
+
+    await openLiveRoom(
+        auction,
+        true
+    );
 }
 
 async function openLiveRoom(auction, scroll) {
@@ -2066,14 +2173,440 @@ function renderPaymentMethods() {
    CONTROLES VISUALES EXISTENTES
    ========================= */
 
-function renderDevelopmentUser() {
-    const userName = document.getElementById("active-user-name");
+/* =========================
+   AUTENTICACIÓN Y SESIÓN
+   ========================= */
 
-    if (userName) {
-        userName.textContent = DEVELOPMENT_USER.name;
+function loadUserSession() {
+    try {
+        const storedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+
+        if (!storedSession) {
+            return null;
+        }
+
+        const session = JSON.parse(storedSession);
+
+        if (!session?.userId) {
+            return null;
+        }
+
+        return session;
+    } catch (error) {
+        console.error("No se pudo recuperar la sesión.", error);
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        return null;
     }
 }
 
+function saveUserSession(user) {
+    currentSession = {
+        userId: user.userId,
+        nombre: user.nombre,
+        email: user.email
+    };
+
+    localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify(currentSession)
+    );
+
+    updateAuthenticationUI();
+}
+
+function clearUserSession() {
+    currentSession = null;
+    myPublications = [];
+
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+
+    updateAuthenticationUI();
+
+    history.replaceState(null, "", "#catalog");
+    showView("catalog", false);
+
+    void leaveLiveRoom();
+}
+
+function updateAuthenticationUI() {
+    const isLoggedIn = Boolean(currentSession?.userId);
+
+    const userName =
+        document.getElementById("active-user-name");
+
+    const guestMenuItems =
+        document.querySelectorAll(
+            ".guest-menu-item, #guest-menu"
+        );
+
+    const loggedMenuItems =
+        document.querySelectorAll(
+            ".logged-menu-item, #logged-menu"
+        );
+
+    const sellerName =
+        document.getElementById("auction-seller-name");
+
+
+    if (userName) {
+        userName.textContent =
+            isLoggedIn
+                ? currentSession.nombre
+                : "Login";
+    }
+
+
+    guestMenuItems.forEach(item => {
+        item.hidden = isLoggedIn;
+    });
+
+
+    loggedMenuItems.forEach(item => {
+        item.hidden = !isLoggedIn;
+    });
+
+
+    document
+        .querySelectorAll(".auth-only")
+        .forEach(element => {
+            element.hidden = !isLoggedIn;
+        });
+
+
+    if (sellerName) {
+        sellerName.textContent =
+            isLoggedIn
+                ? currentSession.nombre
+                : "";
+    }
+}
+
+function configureAuthentication() {
+    updateAuthenticationUI();
+
+    const loginForm =
+        document.getElementById("login-form");
+
+    const registerForm =
+        document.getElementById("register-form");
+
+    const logoutButton =
+        document.getElementById("logout-button");
+
+
+    loginForm?.addEventListener(
+        "submit",
+        loginUser
+    );
+
+
+    registerForm?.addEventListener(
+        "submit",
+        registerUser
+    );
+
+
+    logoutButton?.addEventListener(
+        "click",
+        () => {
+
+            const dropdownButton =
+                document.getElementById(
+                    "auth-menu-button"
+                );
+
+            if (dropdownButton) {
+                bootstrap.Dropdown
+                    .getOrCreateInstance(
+                        dropdownButton
+                    )
+                    .hide();
+            }
+
+            clearUserSession();
+
+            showToast(
+                "Sesión cerrada",
+                "Cerraste sesión correctamente.",
+                "success"
+            );
+        }
+    );
+}
+
+async function loginUser(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+
+    const submitButton =
+        document.getElementById(
+            "login-submit"
+        );
+
+    const email =
+        form.elements.email.value.trim();
+
+    const password =
+        form.elements.password.value;
+
+
+    setAuthFeedback(
+        "login-feedback",
+        ""
+    );
+
+
+    submitButton.disabled = true;
+    submitButton.textContent =
+        "Ingresando…";
+
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE_URL}/api/auth/login`,
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                credentials: "include",
+
+                body: JSON.stringify({
+                    email,
+                    password
+                })
+            }
+        );
+
+
+        if (!response.ok) {
+            throw new Error(
+                await readApiError(response)
+            );
+        }
+
+
+        const user =
+            await response.json();
+
+
+        saveUserSession(user);
+
+
+        form.reset();
+
+
+        bootstrap.Modal
+            .getOrCreateInstance(
+                document.getElementById(
+                    "login-modal"
+                )
+            )
+            .hide();
+
+
+        showToast(
+            "Bienvenido",
+            `Ingresaste como ${user.nombre}.`,
+            "success"
+        );
+
+    } catch (error) {
+
+        setAuthFeedback(
+            "login-feedback",
+            error.message,
+            "error"
+        );
+
+    } finally {
+
+        submitButton.disabled = false;
+        submitButton.textContent =
+            "Ingresar";
+    }
+}
+
+async function registerUser(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+
+    const submitButton =
+        document.getElementById(
+            "register-submit"
+        );
+
+
+    const nombre =
+        form.elements.nombre.value.trim();
+
+    const email =
+        form.elements.email.value.trim();
+
+    const password =
+        form.elements.password.value;
+
+    const confirmPassword =
+        form.elements.confirmPassword.value;
+
+
+    setAuthFeedback(
+        "register-feedback",
+        ""
+    );
+
+
+    if (password !== confirmPassword) {
+
+        setAuthFeedback(
+            "register-feedback",
+            "Las contraseñas no coinciden.",
+            "error"
+        );
+
+        return;
+    }
+
+
+    if (password.length < 8) {
+
+        setAuthFeedback(
+            "register-feedback",
+            "La contraseña debe tener al menos 8 caracteres.",
+            "error"
+        );
+
+        return;
+    }
+
+
+    submitButton.disabled = true;
+    submitButton.textContent =
+        "Creando cuenta…";
+
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE_URL}/api/auth/register`,
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                credentials: "include",
+
+                body: JSON.stringify({
+                    nombre,
+                    email,
+                    password
+                })
+            }
+        );
+
+
+        if (!response.ok) {
+            throw new Error(
+                await readApiError(response)
+            );
+        }
+
+
+        await response.json();
+
+        form.reset();
+
+
+        bootstrap.Modal
+            .getOrCreateInstance(
+                document.getElementById(
+                    "register-modal"
+                )
+            )
+            .hide();
+
+
+        const loginForm =
+            document.getElementById(
+                "login-form"
+            );
+
+        if (loginForm) {
+            loginForm.elements.email.value =
+                email;
+        }
+
+
+        showToast(
+            "Usuario creado",
+            "La cuenta fue creada. Ahora podés ingresar.",
+            "success"
+        );
+
+
+        window.setTimeout(
+            () => {
+
+                bootstrap.Modal
+                    .getOrCreateInstance(
+                        document.getElementById(
+                            "login-modal"
+                        )
+                    )
+                    .show();
+
+            },
+            300
+        );
+
+    } catch (error) {
+
+        setAuthFeedback(
+            "register-feedback",
+            error.message,
+            "error"
+        );
+
+    } finally {
+
+        submitButton.disabled = false;
+        submitButton.textContent =
+            "Crear cuenta";
+    }
+}
+
+function setAuthFeedback(
+    elementId,
+    message,
+    type = ""
+) {
+    const feedback =
+        document.getElementById(elementId);
+
+    if (!feedback) {
+        return;
+    }
+
+    feedback.textContent = message;
+
+    feedback.classList.remove(
+        "error",
+        "success"
+    );
+
+    if (type) {
+        feedback.classList.add(type);
+    }
+}
 async function loadCategories() {
     try {
         const response = await fetch(
@@ -2226,7 +2759,7 @@ function configureAuctionCreation() {
     const form = document.getElementById("auction-form");
 
     document.getElementById("auction-seller-name").textContent =
-        DEVELOPMENT_USER.name;
+        currentSession?.nombre ?? "";
     setAuctionFormDates(form);
 
     openButton.addEventListener("click", () => {
@@ -2802,4 +3335,5 @@ function showToast(title, message, type) {
     });
 
     toast.show();
+    
 }

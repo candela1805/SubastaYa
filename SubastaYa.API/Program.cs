@@ -8,6 +8,8 @@ using SubastaYa.API.Workers;
 using SubastaYa.API.Authentication;
 using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Identity;
+using SubastaYa.API.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,9 @@ builder.Services
 
 builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<
+    IPasswordHasher<Usuario>,
+    PasswordHasher<Usuario>>();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(

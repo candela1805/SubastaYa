@@ -1919,4 +1919,64 @@ select:focus-visible {
     .bid-input-row {
         grid-template-columns: 1fr;
     }
+    .auth-menu {
+        position: relative;
+    }
+
+    .login-dropdown {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        width: 190px;
+        padding: 8px;
+        background: #ffffff;
+        border: 1px solid #e1e7ef;
+        border-radius: 10px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+        z-index: 1050;
+    }
+
+        .login-dropdown button {
+            width: 100%;
+            padding: 11px 12px;
+            border: 0;
+            border-radius: 7px;
+            background: transparent;
+            text-align: left;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+            .login-dropdown button:hover {
+                background: #eef4ff;
+                color: #1265e8;
+            }
+
+    .auth-modal-content {
+        border: 0;
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .auth-form {
+        display: grid;
+        gap: 18px;
+    }
+
+    .auth-modal-footer {
+        justify-content: space-between;
+    }
+
+    .auth-feedback {
+        min-height: 20px;
+        font-size: 0.9rem;
+    }
+
+        .auth-feedback.error {
+            color: #c62828;
+        }
+
+        .auth-feedback.success {
+            color: #16803c;
+        }
 }
