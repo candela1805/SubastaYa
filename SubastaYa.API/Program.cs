@@ -9,7 +9,6 @@ using SubastaYa.API.Authentication;
 using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Identity;
-using SubastaYa.API.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
