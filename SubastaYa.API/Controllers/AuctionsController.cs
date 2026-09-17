@@ -138,6 +138,28 @@ public sealed class AuctionsController : ControllerBase
         return Ok(resultado);
     }
 
+    [HttpGet("my-bids")]
+    [Authorize]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<BidActivityResponse>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<BidActivityResponse>>>
+        ObtenerMisPujas(CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(new
+            {
+                message = "No se pudo identificar al usuario autenticado."
+            });
+        }
+
+        return Ok(await _auctionService.ObtenerActividadesDePujasAsync(
+            userId,
+            cancellationToken));
+    }
+
     [HttpPut("{subastaId:guid}")]
     [Authorize]
     [ProducesResponseType(typeof(AuctionResponse), StatusCodes.Status200OK)]

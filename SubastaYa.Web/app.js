@@ -35,6 +35,12 @@ let preferredPaymentMethod = "card";
 let myPublications = [];
 let publicationFilter = "all";
 let publicationPendingDeletion = null;
+let myBidActivities = [];
+let purchaseFilter = "EnCurso";
+let activityCountdownTimer = null;
+let activityRefreshTimer = null;
+const activityJoinedAuctionIds = new Set();
+const activityExpirationRefreshes = new Set();
 let activeAuction = null;
 let bidHistory = [];
 let hubConnection = null;
@@ -169,6 +175,7 @@ async function handleRoute(scroll = true) {
         )
     ) {
 
+        await leaveActivityAuctionGroups();
         await leaveLiveRoom();
 
         history.replaceState(
@@ -187,6 +194,7 @@ async function handleRoute(scroll = true) {
 
 
     if (auctionId) {
+        await leaveActivityAuctionGroups();
         const auction =
             catalogAuctions.find(
                 item =>
@@ -227,6 +235,12 @@ async function handleRoute(scroll = true) {
         return;
     }
 
+    if (view !== "activities") {
+        await leaveActivityAuctionGroups();
+    }
+
+    await leaveLiveRoom();
+
     showView(
         view,
         scroll
@@ -237,11 +251,11 @@ async function handleRoute(scroll = true) {
 
 
     if (view === "activities") {
-        await loadMyPublications();
+        await Promise.all([
+            loadMyBidActivities(),
+            loadMyPublications()
+        ]);
     }
-
-
-    await leaveLiveRoom();
 }
 
 function getAuctionIdFromHash() {
@@ -1298,30 +1312,7 @@ async function connectToAuctionHub(
         return;
     }
 
-    if (!hubConnection) {
-        hubConnection = new signalR.HubConnectionBuilder()
-            .withUrl(`${API_BASE_URL}/hubs/auctions`, {
-                withCredentials: true
-            })
-            .withAutomaticReconnect()
-            .build();
-
-        hubConnection.on("BidPlaced", bid => {
-            void handleRealtimeBidPlaced(bid);
-        });
-        hubConnection.on("AuctionStateChanged", applyAuctionState);
-        hubConnection.onreconnecting(() => {
-            connectionStatus.textContent = "Reconectando…";
-            startBidPolling();
-        });
-        hubConnection.onreconnected(() => {
-            void handleAuctionHubReconnected(connectionStatus);
-        });
-        hubConnection.onclose(() => {
-            connectionStatus.textContent = "Actualizando cada 5 s";
-            startBidPolling();
-        });
-    }
+    ensureAuctionHubConnection();
 
     try {
         const auctionId = roomContext.auctionId;
@@ -1354,6 +1345,49 @@ async function connectToAuctionHub(
         startBidPolling();
         showToast("Tiempo real no disponible", error.message, "warning");
     }
+}
+
+function ensureAuctionHubConnection() {
+    if (hubConnection || !window.signalR) {
+        return;
+    }
+
+    hubConnection = new signalR.HubConnectionBuilder()
+        .withUrl(`${API_BASE_URL}/hubs/auctions`, {
+            withCredentials: true
+        })
+        .withAutomaticReconnect()
+        .build();
+
+    hubConnection.on("BidPlaced", bid => {
+        void handleRealtimeBidPlaced(bid);
+        scheduleBidActivitiesRefresh(bid.subastaId);
+    });
+    hubConnection.on("AuctionStateChanged", update => {
+        applyAuctionState(update);
+        scheduleBidActivitiesRefresh(update.subastaId);
+    });
+    hubConnection.onreconnecting(() => {
+        const connectionStatus = document.getElementById("connection-status");
+        if (connectionStatus) {
+            connectionStatus.textContent = "Reconectando…";
+        }
+        startBidPolling();
+    });
+    hubConnection.onreconnected(() => {
+        const connectionStatus = document.getElementById("connection-status");
+        if (activeAuction && connectionStatus) {
+            void handleAuctionHubReconnected(connectionStatus);
+        }
+        void rejoinActivityAuctionGroups();
+    });
+    hubConnection.onclose(() => {
+        const connectionStatus = document.getElementById("connection-status");
+        if (connectionStatus) {
+            connectionStatus.textContent = "Actualizando cada 5 s";
+        }
+        startBidPolling();
+    });
 }
 
 async function handleAuctionHubReconnected(connectionStatus) {
@@ -2993,7 +3027,7 @@ async function createAuction(event) {
 
 
 /* =========================
-   MIS PUBLICACIONES
+   MIS ACTIVIDADES
    ========================= */
 
 function configureActivities() {
@@ -3020,6 +3054,13 @@ function configureActivities() {
         });
     });
 
+    document.querySelectorAll("[data-purchase-state]").forEach(button => {
+        button.addEventListener("click", () => {
+            purchaseFilter = button.dataset.purchaseState;
+            renderMyBidActivities();
+        });
+    });
+
     document.getElementById("edit-auction-form").addEventListener(
         "submit",
         updatePublication
@@ -3029,6 +3070,280 @@ function configureActivities() {
         deletePublication
     );
 }
+
+
+/* =========================
+   MIS COMPRAS / PUJAS
+   ========================= */
+
+async function loadMyBidActivities() {
+    const body = document.getElementById("purchases-table-body");
+    const feedback = document.getElementById("purchases-feedback");
+
+    body.innerHTML = "";
+    feedback.hidden = false;
+    feedback.innerHTML = `
+        <i>◴</i>
+        <strong>Cargando compras y pujas</strong>
+    `;
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions/my-bids`,
+            getAuthenticatedRequestOptions({ cache: "no-store" })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        myBidActivities = await response.json();
+        renderMyBidActivities();
+
+        try {
+            await synchronizeActivityAuctionGroups();
+        } catch (error) {
+            showToast(
+                "Tiempo real no disponible",
+                error.message,
+                "warning"
+            );
+        }
+    } catch (error) {
+        feedback.hidden = false;
+        feedback.innerHTML = `
+            <i>!</i>
+            <strong>No se pudieron cargar tus compras y pujas</strong>
+            <p>${escapeHtml(error.message)}</p>
+        `;
+    }
+}
+
+function renderMyBidActivities() {
+    const body = document.getElementById("purchases-table-body");
+    const feedback = document.getElementById("purchases-feedback");
+    const activities = myBidActivities.filter(activity => {
+        return activity.resultado === purchaseFilter;
+    });
+
+    updateBidActivityCounts();
+    body.innerHTML = "";
+
+    if (activities.length === 0) {
+        const messages = {
+            EnCurso: [
+                "No tenés pujas en curso.",
+                "Las subastas abiertas en las que participes aparecerán aquí."
+            ],
+            Ganada: [
+                "Todavía no ganaste ninguna subasta.",
+                "Tus compras adjudicadas aparecerán aquí."
+            ],
+            Perdida: [
+                "No tenés subastas perdidas.",
+                "Las subastas cerradas que no ganaste aparecerán aquí."
+            ]
+        };
+        const [title, description] = messages[purchaseFilter];
+
+        feedback.hidden = false;
+        feedback.innerHTML = `
+            <i>⌁</i>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(description)}</p>
+        `;
+        stopActivityCountdown();
+        return;
+    }
+
+    feedback.hidden = true;
+    activities.forEach(activity => {
+        const row = document.createElement("tr");
+        const state = auctionStateNames[activity.estado] ?? activity.estado;
+        const isOpen = activity.resultado === "EnCurso";
+
+        row.innerHTML = `
+            <td>
+                <div class="activity-auction">
+                    <img
+                        src="${escapeHtml(activity.imagenUrl || DEFAULT_AUCTION_IMAGE)}"
+                        alt="${escapeHtml(activity.titulo)}"
+                    >
+                    <div>
+                        <strong>${escapeHtml(activity.titulo)}</strong>
+                        <small>${escapeHtml(activity.categoria)}</small>
+                    </div>
+                </div>
+            </td>
+            <td>${money(activity.miOferta)}</td>
+            <td>${money(activity.ofertaActual)}</td>
+            <td>
+                <span class="activity-status activity-status-${activity.resultado.toLowerCase()}">
+                    ${escapeHtml(state)}
+                </span>
+            </td>
+            <td
+                ${isOpen
+                    ? `data-activity-id="${activity.subastaId}" data-activity-end="${escapeHtml(activity.fechaFinUtc)}"`
+                    : ""}
+            >
+                ${isOpen
+                    ? formatRemainingTime(getRemainingMilliseconds(activity.fechaFinUtc))
+                    : state}
+            </td>
+            <td>
+                <button type="button" class="activity-view-action">
+                    Ver subasta
+                </button>
+            </td>
+        `;
+        configureImageFallback(row.querySelector("img"));
+        row.querySelector(".activity-view-action").addEventListener(
+            "click",
+            () => viewBidActivity(activity)
+        );
+        body.appendChild(row);
+    });
+
+    startActivityCountdown();
+}
+
+function updateBidActivityCounts() {
+    document.getElementById("purchase-count-active").textContent =
+        myBidActivities.filter(item => item.resultado === "EnCurso").length;
+    document.getElementById("purchase-count-won").textContent =
+        myBidActivities.filter(item => item.resultado === "Ganada").length;
+    document.getElementById("purchase-count-lost").textContent =
+        myBidActivities.filter(item => item.resultado === "Perdida").length;
+}
+
+function startActivityCountdown() {
+    stopActivityCountdown();
+    updateActivityCountdowns();
+    activityCountdownTimer = window.setInterval(updateActivityCountdowns, 1000);
+}
+
+function stopActivityCountdown() {
+    window.clearInterval(activityCountdownTimer);
+    activityCountdownTimer = null;
+}
+
+function updateActivityCountdowns() {
+    let reachedEnd = false;
+
+    document.querySelectorAll("[data-activity-end]").forEach(element => {
+        const remaining = getRemainingMilliseconds(element.dataset.activityEnd);
+        const expirationKey =
+            `${element.dataset.activityId}|${element.dataset.activityEnd}`;
+        element.textContent = remaining > 0
+            ? formatRemainingTime(remaining)
+            : "Finalizando…";
+
+        if (
+            remaining <= 0 &&
+            !activityExpirationRefreshes.has(expirationKey)
+        ) {
+            activityExpirationRefreshes.add(expirationKey);
+            reachedEnd = true;
+        }
+    });
+
+    if (reachedEnd) {
+        scheduleBidActivitiesRefresh();
+    }
+}
+
+function scheduleBidActivitiesRefresh(subastaId = null) {
+    if (getViewFromHash() !== "activities") {
+        return;
+    }
+
+    if (subastaId && !myBidActivities.some(item => item.subastaId === subastaId)) {
+        return;
+    }
+
+    window.clearTimeout(activityRefreshTimer);
+    activityRefreshTimer = window.setTimeout(() => {
+        activityRefreshTimer = null;
+        void loadMyBidActivities();
+    }, 250);
+}
+
+async function synchronizeActivityAuctionGroups() {
+    if (!window.signalR || getViewFromHash() !== "activities") {
+        return;
+    }
+
+    ensureAuctionHubConnection();
+
+    if (hubConnection.state === signalR.HubConnectionState.Disconnected) {
+        await hubConnection.start();
+    }
+
+    const desiredIds = new Set(myBidActivities.map(item => item.subastaId));
+
+    for (const auctionId of [...activityJoinedAuctionIds]) {
+        if (!desiredIds.has(auctionId)) {
+            await hubConnection.invoke("LeaveAuction", auctionId);
+            activityJoinedAuctionIds.delete(auctionId);
+        }
+    }
+
+    for (const auctionId of desiredIds) {
+        if (!activityJoinedAuctionIds.has(auctionId)) {
+            await hubConnection.invoke("JoinAuction", auctionId);
+            activityJoinedAuctionIds.add(auctionId);
+        }
+    }
+}
+
+async function rejoinActivityAuctionGroups() {
+    if (getViewFromHash() !== "activities") {
+        return;
+    }
+
+    for (const auctionId of activityJoinedAuctionIds) {
+        await hubConnection.invoke("JoinAuction", auctionId);
+    }
+}
+
+async function leaveActivityAuctionGroups() {
+    stopActivityCountdown();
+    window.clearTimeout(activityRefreshTimer);
+    activityRefreshTimer = null;
+
+    if (hubConnection?.state === window.signalR?.HubConnectionState.Connected) {
+        for (const auctionId of activityJoinedAuctionIds) {
+            try {
+                await hubConnection.invoke("LeaveAuction", auctionId);
+            } catch {
+                break;
+            }
+        }
+    }
+
+    activityJoinedAuctionIds.clear();
+}
+
+async function viewBidActivity(activity) {
+    await leaveActivityAuctionGroups();
+    await viewPublication({
+        id: activity.subastaId,
+        titulo: activity.titulo,
+        descripcion: activity.descripcion,
+        imagenUrl: activity.imagenUrl,
+        categoria: activity.categoria,
+        precioActual: activity.ofertaActual,
+        incrementoMinimo: activity.incrementoMinimo,
+        fechaFinUtc: activity.fechaFinUtc,
+        estado: activity.estado
+    });
+}
+
+
+/* =========================
+   MIS PUBLICACIONES
+   ========================= */
 
 async function loadMyPublications() {
     const container = document.getElementById("publications-container");

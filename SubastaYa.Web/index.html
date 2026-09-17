@@ -431,10 +431,16 @@
                 <div class="workspace-content activities-content">
                     <section id="purchases">
                         <h1 class="section-title">Mis Compras / Pujas</h1>
-                        <div class="tabs">
-                            <button class="active">En curso <span>0</span></button>
-                            <button>Ganadas <span>0</span></button>
-                            <button>Perdidas <span>0</span></button>
+                        <div class="tabs" id="purchase-filters">
+                            <button class="active" type="button" data-purchase-state="EnCurso">
+                                En curso <span id="purchase-count-active">0</span>
+                            </button>
+                            <button type="button" data-purchase-state="Ganada">
+                                Ganadas <span id="purchase-count-won">0</span>
+                            </button>
+                            <button type="button" data-purchase-state="Perdida">
+                                Perdidas <span id="purchase-count-lost">0</span>
+                            </button>
                         </div>
                         <div class="activity-table-wrap">
                             <table>
@@ -448,11 +454,11 @@
                                         <th>Acción</th>
                                     </tr>
                                 </thead>
+                                <tbody id="purchases-table-body"></tbody>
                             </table>
-                            <div class="empty-state">
-                                <i>⌁</i>
-                                <strong>Sin compras o pujas para mostrar</strong>
-                                <p>Esta información estará disponible al integrar el módulo de actividades.</p>
+                            <div id="purchases-feedback" class="empty-state">
+                                <i>◴</i>
+                                <strong>Cargando compras y pujas</strong>
                             </div>
                         </div>
                     </section>
