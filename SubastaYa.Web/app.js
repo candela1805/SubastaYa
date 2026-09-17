@@ -1,8 +1,14 @@
 const API_BASE_URL = "http://localhost:5000";
+const DEVELOPMENT_USER = {
+    id: "11111111-1111-1111-1111-111111111111",
+    name: "Usuario Demo",
+    email: "demo@subastaya.com"
+};
 const DEFAULT_AUCTION_IMAGE = createPlaceholderImage();
 const BID_POLL_INTERVAL_MS = 5000;
 const BID_STATE_REQUEST_TIMEOUT_MS = 8000;
 const BID_STATE_RETRY_DELAYS_MS = [1000, 2500, 5000];
+const NEW_CATEGORY_VALUE = "__new_category__";
 const biddingCore = window.SubastaYaBidding;
 
 if (!biddingCore) {
@@ -17,6 +23,10 @@ const auctionStateNames = {
 };
 
 let catalogAuctions = [];
+let availableCategories = [];
+let myPublications = [];
+let publicationFilter = "all";
+let publicationPendingDeletion = null;
 let activeAuction = null;
 let bidHistory = [];
 let hubConnection = null;
@@ -37,12 +47,27 @@ let deferredPersonalStateRefresh = null;
 let bidUiState = biddingCore.createBidUiState();
 const notifiedExtensions = new Set();
 
+function getAuthenticatedRequestOptions(options = {}) {
+    return {
+        ...options,
+        credentials: "include",
+        headers: {
+            ...options.headers,
+            "X-User-Id": DEVELOPMENT_USER.id
+        }
+    };
+}
+
 
 /* =========================
    INICIALIZACIÓN
    ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
+    renderDevelopmentUser();
+    configureCategoryControls();
+    await loadCategories();
+
     const initialAuctionId = getAuctionIdFromHash();
 
     if (!initialAuctionId) {
@@ -53,6 +78,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     configureVisualControls();
     configureFilters();
     configureLiveRoom();
+    configureAuctionCreation();
+    configureActivities();
 
     if (initialAuctionId) {
         await loadAuctions();
@@ -104,7 +131,7 @@ async function handleRoute(scroll = true) {
     if (auctionId) {
         const auction = catalogAuctions.find(item => item.id === auctionId);
 
-        if (canOpenAuction(auction)) {
+        if (auction) {
             await openLiveRoom(auction, scroll);
             return;
         }
@@ -126,6 +153,10 @@ async function handleRoute(scroll = true) {
 
     if (view === "wallet") {
         await loadWalletBalance();
+    }
+
+    if (view === "activities") {
+        await loadMyPublications();
     }
 
     await leaveLiveRoom();
@@ -374,7 +405,10 @@ function configureLiveRoom() {
     });
 
     bidSubmissionCoordinator = biddingCore.createBidSubmissionCoordinator({
-        sendBid: request => fetch(request.url, request.options),
+        sendBid: request => fetch(
+            request.url,
+            getAuthenticatedRequestOptions(request.options)
+        ),
         refreshRoomState: response => refreshRoomStateAfterConflict(
             response,
             activeBidSubmissionContext
@@ -731,11 +765,13 @@ async function loadBidRoomState({
             API_BASE_URL,
             auctionId
         );
-        const response = await fetch(request.url, {
-            ...request.options,
-            signal: abortController.signal
-        });
-
+        const response = await fetch(
+            request.url,
+            getAuthenticatedRequestOptions({
+                ...request.options,
+                signal: abortController.signal
+            })
+        );
         if (!response.ok) {
             const error = new Error(await readApiError(response));
             error.status = response.status;
@@ -1369,10 +1405,9 @@ async function loadWalletBalance() {
 
         const response = await fetch(
             walletUrl,
-            {
-                cache: "no-store",
-                credentials: "include"
-            }
+            getAuthenticatedRequestOptions({
+                cache: "no-store"
+            })
         );
 
         if (!response.ok) {
@@ -1409,6 +1444,571 @@ async function loadWalletBalance() {
 /* =========================
    CONTROLES VISUALES EXISTENTES
    ========================= */
+
+function renderDevelopmentUser() {
+    const userName = document.getElementById("active-user-name");
+
+    if (userName) {
+        userName.textContent = DEVELOPMENT_USER.name;
+    }
+}
+
+async function loadCategories() {
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions/categories`,
+            {
+                cache: "no-store",
+                credentials: "include"
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        availableCategories = normalizeCategories(await response.json());
+        renderCategoryControls();
+    } catch (error) {
+        console.error("No se pudieron cargar las categorías.", error);
+        showToast(
+            "Categorías no disponibles",
+            error.message,
+            "warning"
+        );
+    }
+}
+
+function normalizeCategories(categories) {
+    const unique = new Map();
+
+    categories.forEach(value => {
+        const category = String(value ?? "").trim();
+        const key = category.toLocaleLowerCase("es");
+
+        if (category && !unique.has(key)) {
+            unique.set(key, category);
+        }
+    });
+
+    return [...unique.values()].sort((first, second) => {
+        return first.localeCompare(second, "es", { sensitivity: "base" });
+    });
+}
+
+function configureCategoryControls() {
+    document.querySelectorAll("[data-category-select]").forEach(select => {
+        select.addEventListener("change", () => {
+            synchronizeNewCategoryField(select.form);
+        });
+
+        select.form.elements.nuevaCategoria.addEventListener("input", event => {
+            event.currentTarget.setCustomValidity("");
+        });
+    });
+}
+
+function renderCategoryControls() {
+    const filter = document.getElementById("catalog-category-filter");
+    const selectedFilter = filter.value;
+
+    replaceCategoryOptions(filter, "Todas", false);
+    filter.value = availableCategories.includes(selectedFilter)
+        ? selectedFilter
+        : "";
+
+    document.querySelectorAll("[data-category-select]").forEach(select => {
+        const selectedCategory = select.value;
+        replaceCategoryOptions(
+            select,
+            select.dataset.placeholder,
+            true,
+            selectedCategory
+        );
+        synchronizeNewCategoryField(select.form);
+    });
+}
+
+function replaceCategoryOptions(
+    select,
+    placeholder,
+    includeNewCategory,
+    extraCategory = ""
+) {
+    const categories = [...availableCategories];
+    const normalizedExtra = String(extraCategory ?? "").trim();
+
+    if (normalizedExtra &&
+        normalizedExtra !== NEW_CATEGORY_VALUE &&
+        !categories.some(category => {
+            return category.localeCompare(
+                normalizedExtra,
+                "es",
+                { sensitivity: "base" }
+            ) === 0;
+        })) {
+        categories.push(normalizedExtra);
+        categories.sort((first, second) => {
+            return first.localeCompare(second, "es", { sensitivity: "base" });
+        });
+    }
+
+    select.replaceChildren(new Option(placeholder, ""));
+    categories.forEach(category => {
+        select.add(new Option(category, category));
+    });
+
+    if (includeNewCategory) {
+        select.add(new Option("+ Nueva categoría", NEW_CATEGORY_VALUE));
+    }
+
+    select.value = normalizedExtra;
+}
+
+function synchronizeNewCategoryField(form) {
+    const select = form.elements.categoria;
+    const field = form.querySelector("[data-new-category-field]");
+    const input = form.elements.nuevaCategoria;
+    const creatingCategory = select.value === NEW_CATEGORY_VALUE;
+
+    field.hidden = !creatingCategory;
+    input.required = creatingCategory;
+
+    if (!creatingCategory) {
+        input.value = "";
+        input.setCustomValidity("");
+    }
+}
+
+function getCategoryValue(form) {
+    const select = form.elements.categoria;
+    const input = form.elements.nuevaCategoria;
+
+    if (select.value !== NEW_CATEGORY_VALUE) {
+        return select.value.trim();
+    }
+
+    const category = input.value.trim();
+    input.setCustomValidity(
+        category ? "" : "Ingresá el nombre de la nueva categoría."
+    );
+    return category;
+}
+
+
+/* =========================
+   CREAR SUBASTA
+   ========================= */
+
+function configureAuctionCreation() {
+    const openButton = document.getElementById("open-auction-form");
+    const form = document.getElementById("auction-form");
+
+    document.getElementById("auction-seller-name").textContent =
+        DEVELOPMENT_USER.name;
+    setAuctionFormDates(form);
+
+    openButton.addEventListener("click", () => {
+        bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("auction-form-modal")
+        ).show();
+    });
+
+    form.addEventListener("submit", createAuction);
+}
+
+function setAuctionFormDates(form) {
+    const now = new Date();
+    const end = new Date(now.getTime() + 60 * 60 * 1000);
+
+    form.elements.fechaInicioUtc.value = toLocalDateTimeInput(now);
+    form.elements.fechaFinUtc.value = toLocalDateTimeInput(end);
+}
+
+async function createAuction(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const submitButton = document.getElementById("create-auction-submit");
+    const startDate = new Date(form.elements.fechaInicioUtc.value);
+    const endDate = new Date(form.elements.fechaFinUtc.value);
+    const category = getCategoryValue(form);
+
+    form.elements.fechaFinUtc.setCustomValidity(
+        endDate > startDate
+            ? ""
+            : "La finalización debe ser posterior al inicio."
+    );
+
+    if (!form.reportValidity()) {
+        return;
+    }
+
+    const request = {
+        titulo: form.elements.titulo.value.trim(),
+        descripcion: form.elements.descripcion.value.trim(),
+        imagenUrl: form.elements.imagenUrl.value.trim() || null,
+        categoria: category,
+        precioInicial: Number(form.elements.precioInicial.value),
+        incrementoMinimo: Number(form.elements.incrementoMinimo.value),
+        fechaInicioUtc: startDate.toISOString(),
+        fechaFinUtc: endDate.toISOString()
+    };
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Publicando…";
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions`,
+            getAuthenticatedRequestOptions({
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(request)
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        const auction = await response.json();
+
+        bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("auction-form-modal")
+        ).hide();
+        form.reset();
+        synchronizeNewCategoryField(form);
+        setAuctionFormDates(form);
+        showToast(
+            "Subasta publicada",
+            `“${auction.titulo}” ya forma parte de tus publicaciones.`,
+            "success"
+        );
+        await loadCategories();
+        await loadAuctions();
+
+        if (location.hash !== "#activities") {
+            history.pushState(null, "", "#activities");
+        }
+
+        await handleRoute(false);
+    } catch (error) {
+        showToast("No se pudo publicar", error.message, "danger");
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Publicar subasta";
+    }
+}
+
+
+/* =========================
+   MIS PUBLICACIONES
+   ========================= */
+
+function configureActivities() {
+    document.querySelectorAll(".side-nav a[href^='#']").forEach(link => {
+        link.addEventListener("click", event => {
+            const section = document.querySelector(link.getAttribute("href"));
+
+            if (!section) {
+                return;
+            }
+
+            event.preventDefault();
+            link.closest(".side-nav").querySelectorAll("a").forEach(item => {
+                item.classList.toggle("active", item === link);
+            });
+            section.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+    });
+
+    document.querySelectorAll("[data-publication-state]").forEach(button => {
+        button.addEventListener("click", () => {
+            publicationFilter = button.dataset.publicationState;
+            renderMyPublications();
+        });
+    });
+
+    document.getElementById("edit-auction-form").addEventListener(
+        "submit",
+        updatePublication
+    );
+    document.getElementById("confirm-delete-auction").addEventListener(
+        "click",
+        deletePublication
+    );
+}
+
+async function loadMyPublications() {
+    const container = document.getElementById("publications-container");
+
+    container.innerHTML = createLoadingState("Cargando publicaciones");
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions/mine`,
+            getAuthenticatedRequestOptions({
+                cache: "no-store"
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        myPublications = await response.json();
+        renderMyPublications();
+    } catch (error) {
+        container.innerHTML = createErrorState(
+            "No se pudieron cargar tus publicaciones",
+            error.message
+        );
+    }
+}
+
+function renderMyPublications() {
+    const container = document.getElementById("publications-container");
+    const publications = myPublications.filter(auction => {
+        const status = auctionStateNames[auction.estado] ?? auction.estado;
+        return publicationFilter === "all" || status === publicationFilter;
+    });
+
+    updatePublicationCounts();
+    container.innerHTML = "";
+
+    if (publications.length === 0) {
+        container.innerHTML = createEmptyState(
+            "Sin publicaciones para mostrar",
+            publicationFilter === "all"
+                ? "Las subastas que publiques aparecerán aquí."
+                : "No hay publicaciones con este estado."
+        );
+        return;
+    }
+
+    publications.forEach(auction => {
+        const status = auctionStateNames[auction.estado] ?? auction.estado;
+        const card = document.createElement("article");
+
+        card.className = "publication-card";
+        card.innerHTML = `
+            <img
+                src="${escapeHtml(auction.imagenUrl || DEFAULT_AUCTION_IMAGE)}"
+                alt="${escapeHtml(auction.titulo)}"
+            >
+            <div class="publication-card-body">
+                <div class="publication-card-heading">
+                    <h3>${escapeHtml(auction.titulo)}</h3>
+                    <span class="publication-status">${escapeHtml(status)}</span>
+                </div>
+                <dl>
+                    <div>
+                        <dt>Precio inicial</dt>
+                        <dd>${money(auction.precioInicial)}</dd>
+                    </div>
+                    <div>
+                        <dt>Precio actual</dt>
+                        <dd>${money(auction.precioActual)}</dd>
+                    </div>
+                    <div class="publication-end-date">
+                        <dt>Finaliza</dt>
+                        <dd>${formatExactDate(auction.fechaFinUtc)}</dd>
+                    </div>
+                </dl>
+                <div class="publication-actions">
+                    <button type="button" data-publication-action="view">Ver</button>
+                    <button type="button" data-publication-action="edit">Editar</button>
+                    <button
+                        type="button"
+                        class="danger-outline-action"
+                        data-publication-action="delete"
+                    >
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+        `;
+        configureImageFallback(card.querySelector("img"));
+        card.querySelector("[data-publication-action='view']")
+            .addEventListener("click", () => viewPublication(auction));
+        card.querySelector("[data-publication-action='edit']")
+            .addEventListener("click", () => openEditPublication(auction));
+        card.querySelector("[data-publication-action='delete']")
+            .addEventListener("click", () => openDeletePublication(auction));
+        container.appendChild(card);
+    });
+}
+
+async function viewPublication(publication) {
+    const auction = normalizeAuction(publication);
+    const existingIndex = catalogAuctions.findIndex(item => item.id === auction.id);
+
+    if (existingIndex >= 0) {
+        catalogAuctions[existingIndex] = auction;
+    } else {
+        catalogAuctions.push(auction);
+    }
+
+    history.pushState(null, "", `#auction/${auction.id}`);
+    await openLiveRoom(auction, true);
+}
+
+function openEditPublication(auction) {
+    const form = document.getElementById("edit-auction-form");
+
+    form.elements.id.value = auction.id;
+    form.elements.titulo.value = auction.titulo;
+    form.elements.descripcion.value = auction.descripcion;
+    replaceCategoryOptions(
+        form.elements.categoria,
+        form.elements.categoria.dataset.placeholder,
+        true,
+        auction.categoria
+    );
+    synchronizeNewCategoryField(form);
+    form.elements.imagenUrl.value = auction.imagenUrl ?? "";
+    form.elements.precioInicial.value = money(auction.precioInicial);
+    form.elements.incrementoMinimo.value = money(auction.incrementoMinimo);
+    form.elements.fechaFinUtc.value = toLocalDateTimeInput(auction.fechaFinUtc);
+    form.elements.fechaFinUtc.setCustomValidity("");
+
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById("edit-auction-modal")
+    ).show();
+}
+
+async function updatePublication(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const submitButton = document.getElementById("edit-auction-submit");
+    const endDate = new Date(form.elements.fechaFinUtc.value);
+    const category = getCategoryValue(form);
+
+    form.elements.fechaFinUtc.setCustomValidity(
+        endDate > new Date()
+            ? ""
+            : "La fecha de finalización debe ser futura."
+    );
+
+    if (!form.reportValidity()) {
+        return;
+    }
+
+    const request = {
+        titulo: form.elements.titulo.value.trim(),
+        descripcion: form.elements.descripcion.value.trim(),
+        imagenUrl: form.elements.imagenUrl.value.trim() || null,
+        categoria: category,
+        fechaFinUtc: endDate.toISOString()
+    };
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Guardando…";
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions/${form.elements.id.value}`,
+            getAuthenticatedRequestOptions({
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(request)
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("edit-auction-modal")
+        ).hide();
+        await loadCategories();
+        await loadMyPublications();
+        await loadAuctions();
+        showToast(
+            "Publicación actualizada",
+            "Los cambios se guardaron correctamente.",
+            "success"
+        );
+    } catch (error) {
+        showToast("No se pudo editar", error.message, "danger");
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Guardar cambios";
+    }
+}
+
+function openDeletePublication(auction) {
+    publicationPendingDeletion = auction;
+    document.getElementById("delete-auction-name").textContent = auction.titulo;
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById("delete-auction-modal")
+    ).show();
+}
+
+async function deletePublication() {
+    if (!publicationPendingDeletion) {
+        return;
+    }
+
+    const button = document.getElementById("confirm-delete-auction");
+    const auction = publicationPendingDeletion;
+
+    button.disabled = true;
+    button.textContent = "Eliminando…";
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/auctions/${auction.id}`,
+            getAuthenticatedRequestOptions({
+                method: "DELETE"
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("delete-auction-modal")
+        ).hide();
+        publicationPendingDeletion = null;
+        await loadCategories();
+        await loadMyPublications();
+        await loadAuctions();
+        showToast(
+            "Publicación eliminada",
+            "Publicación eliminada correctamente.",
+            "success"
+        );
+    } catch (error) {
+        showToast("No se pudo eliminar", error.message, "danger");
+    } finally {
+        button.disabled = false;
+        button.textContent = "Eliminar publicación";
+    }
+}
+
+function updatePublicationCounts() {
+    const statuses = myPublications.map(auction => {
+        return auctionStateNames[auction.estado] ?? auction.estado;
+    });
+
+    document.getElementById("publication-count-all").textContent =
+        myPublications.length;
+    document.getElementById("publication-count-active").textContent =
+        statuses.filter(status => status === "Activa").length;
+    document.getElementById("publication-count-finished").textContent =
+        statuses.filter(status => status === "Finalizada").length;
+    document.getElementById("publication-count-deserted").textContent =
+        statuses.filter(status => status === "Desierta").length;
+}
 
 function configureVisualControls() {
     document.querySelectorAll(".amount-options button").forEach(button => {
@@ -1506,6 +2106,15 @@ function formatExactDate(value) {
         dateStyle: "short",
         timeStyle: "medium"
     }).format(new Date(value));
+}
+
+function toLocalDateTimeInput(value) {
+    const date = new Date(value);
+    const localDate = new Date(
+        date.getTime() - date.getTimezoneOffset() * 60 * 1000
+    );
+
+    return localDate.toISOString().slice(0, 16);
 }
 
 async function readApiError(response) {

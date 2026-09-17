@@ -21,6 +21,24 @@ public interface IAuctionService
         CreateAuctionRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<string>> ObtenerCategoriasAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AuctionResponse>> ObtenerPublicacionesAsync(
+        Guid vendedorId,
+        CancellationToken cancellationToken = default);
+
+    Task<AuctionResponse> ActualizarPublicacionAsync(
+        Guid subastaId,
+        Guid vendedorId,
+        UpdateAuctionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task EliminarPublicacionAsync(
+        Guid subastaId,
+        Guid vendedorId,
+        CancellationToken cancellationToken = default);
+
     Task ActivarAsync(
         Guid subastaId,
         CancellationToken cancellationToken = default);

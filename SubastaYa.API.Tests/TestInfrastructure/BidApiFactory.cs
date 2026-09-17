@@ -48,8 +48,9 @@ internal sealed class BidApiFactory : WebApplicationFactory<Program>
             {
                 options
                     .UseInMemoryDatabase(_databaseName, _databaseRoot)
-                    .ConfigureWarnings(warnings => warnings.Ignore(
-                        InMemoryEventId.TransactionIgnoredWarning))
+                    .ConfigureWarnings(warnings => warnings
+                        .Ignore(InMemoryEventId.TransactionIgnoredWarning)
+                        .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
                     .AddInterceptors(SaveInterceptor);
             });
 
