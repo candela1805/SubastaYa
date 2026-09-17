@@ -85,6 +85,11 @@ function getAuthenticatedRequestOptions(
 
 document.addEventListener("DOMContentLoaded", async () => {
     configureAuthentication();
+
+    if (currentSession?.userId) {
+        await refreshCurrentUserProfile();
+    }
+
     configureWallet();
     configureCategoryControls();
     await loadCategories();
@@ -2247,6 +2252,12 @@ function updateAuthenticationUI() {
     const sellerName =
         document.getElementById("auction-seller-name");
 
+    const dropdownName =
+        document.getElementById("dropdown-user-name");
+
+    const dropdownEmail =
+        document.getElementById("dropdown-user-email");
+
 
     if (userName) {
         userName.textContent =
@@ -2279,6 +2290,18 @@ function updateAuthenticationUI() {
                 ? currentSession.nombre
                 : "";
     }
+
+    if (dropdownName) {
+        dropdownName.textContent = isLoggedIn
+            ? currentSession.nombre
+            : "";
+    }
+
+    if (dropdownEmail) {
+        dropdownEmail.textContent = isLoggedIn
+            ? currentSession.email
+            : "";
+    }
 }
 
 function configureAuthentication() {
@@ -2293,6 +2316,12 @@ function configureAuthentication() {
     const logoutButton =
         document.getElementById("logout-button");
 
+    const editProfileButton =
+        document.getElementById("edit-profile-button");
+
+    const profileForm =
+        document.getElementById("profile-form");
+
 
     loginForm?.addEventListener(
         "submit",
@@ -2303,6 +2332,16 @@ function configureAuthentication() {
     registerForm?.addEventListener(
         "submit",
         registerUser
+    );
+
+    editProfileButton?.addEventListener(
+        "click",
+        openProfileEditor
+    );
+
+    profileForm?.addEventListener(
+        "submit",
+        updateUserProfile
     );
 
 
@@ -2332,6 +2371,101 @@ function configureAuthentication() {
             );
         }
     );
+}
+
+async function refreshCurrentUserProfile() {
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/users/me`,
+            getAuthenticatedRequestOptions({ cache: "no-store" })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        saveUserSession(await response.json());
+    } catch (error) {
+        console.warn("No se pudo sincronizar el perfil visible.", error.message);
+    }
+}
+
+function openProfileEditor() {
+    if (!currentSession?.userId) {
+        return;
+    }
+
+    const dropdownButton = document.getElementById("auth-menu-button");
+    bootstrap.Dropdown.getOrCreateInstance(dropdownButton).hide();
+
+    const form = document.getElementById("profile-form");
+    form.elements.nombre.value = currentSession.nombre || "";
+    form.elements.email.value = currentSession.email || "";
+    setAuthFeedback("profile-feedback", "");
+
+    bootstrap.Modal.getOrCreateInstance(
+        document.getElementById("profile-modal")
+    ).show();
+}
+
+async function updateUserProfile(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const submitButton = document.getElementById("profile-submit");
+    const nombre = form.elements.nombre.value.trim();
+    const email = form.elements.email.value.trim();
+
+    if (!nombre) {
+        setAuthFeedback(
+            "profile-feedback",
+            "El nombre es obligatorio.",
+            "error"
+        );
+        return;
+    }
+
+    if (!form.reportValidity()) {
+        return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Guardando…";
+    setAuthFeedback("profile-feedback", "");
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/api/users/me`,
+            getAuthenticatedRequestOptions({
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ nombre, email })
+            })
+        );
+
+        if (!response.ok) {
+            throw new Error(await readApiError(response));
+        }
+
+        saveUserSession(await response.json());
+        bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("profile-modal")
+        ).hide();
+        showToast(
+            "Perfil actualizado correctamente",
+            "Tus datos visibles ya están actualizados.",
+            "success"
+        );
+    } catch (error) {
+        setAuthFeedback(
+            "profile-feedback",
+            error.message,
+            "error"
+        );
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Guardar cambios";
+    }
 }
 
 async function loginUser(event) {

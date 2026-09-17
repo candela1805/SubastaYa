@@ -163,6 +163,65 @@ select:focus-visible {
     border-color: #ffffff28;
 }
 
+.auth-menu {
+    position: relative;
+}
+
+.login-dropdown {
+    width: min(290px, calc(100vw - 24px));
+    padding: 8px;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid #e1e7ef;
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .16);
+    z-index: 1080;
+}
+
+.login-dropdown .dropdown-item {
+    padding: 10px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.login-dropdown .dropdown-item:hover {
+    color: #1265e8;
+    background: #eef4ff;
+}
+
+.user-dropdown-profile {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 10px;
+}
+
+.user-dropdown-profile .avatar {
+    flex: 0 0 auto;
+    color: #fff;
+}
+
+.user-dropdown-profile div {
+    min-width: 0;
+}
+
+.user-dropdown-profile strong,
+.user-dropdown-profile small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-dropdown-profile small {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 400;
+}
+
 .avatar {
     display: grid;
     width: 32px;
@@ -1979,4 +2038,11 @@ select:focus-visible {
         .auth-feedback.success {
             color: #16803c;
         }
+}
+
+@media (max-width: 520px) {
+    .login-dropdown {
+        width: calc(100vw - 24px);
+        max-width: 290px;
+    }
 }

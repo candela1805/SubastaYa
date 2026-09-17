@@ -29,7 +29,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                    <ul class="navbar-nav main-nav mx-auto">
+                <ul class="navbar-nav main-nav mx-auto">
 
                         <li>
                             <a class="nav-link active"
@@ -55,7 +55,7 @@
                             </a>
                         </li>
 
-                    </ul>
+                </ul>
                 <div class="user-area">
                     <button class="notification-button" type="button" aria-label="Notificaciones">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -78,8 +78,8 @@
                             <span id="active-user-name">Login</span>
                         </button>
 
-                            <ul class="dropdown-menu dropdown-menu-end login-dropdown"
-                                aria-labelledby="auth-menu-button">
+                        <ul class="dropdown-menu dropdown-menu-end login-dropdown"
+                            aria-labelledby="auth-menu-button">
 
                                 <!-- MENÚ CUANDO NO HAY SESIÓN -->
                                 <li id="guest-menu">
@@ -101,17 +101,29 @@
                                 </li>
 
                                 <!-- MENÚ CUANDO EL USUARIO YA INGRESÓ -->
-                                <li id="logged-menu" hidden>
+                            <li id="logged-menu" hidden>
+                                <div class="user-dropdown-profile">
+                                    <span class="avatar">👤</span>
+                                    <div>
+                                        <strong id="dropdown-user-name"></strong>
+                                        <small id="dropdown-user-email"></small>
+                                    </div>
+                                </div>
+                                <hr class="dropdown-divider">
+                                <button id="edit-profile-button"
+                                        class="dropdown-item"
+                                        type="button">
+                                    ✎ Editar perfil
+                                </button>
+                                <button id="logout-button"
+                                        class="dropdown-item text-danger"
+                                        type="button">
+                                    ↪ Cerrar sesión
+                                </button>
+                            </li>
 
-                                    <button id="logout-button"
-                                            class="dropdown-item text-danger"
-                                            type="button">
-                                        Cerrar sesión
-                                    </button>
-
-                                </li>
-
-                            </ul>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -297,61 +309,6 @@
                         <h1 class="section-title">Resumen de Saldo</h1>
                         <div class="balance-grid">
                             <article class="balance-card total-card">
-                    <h1 class="section-title">Resumen de Saldo</h1>
-                    <div class="balance-grid">
-                        <article class="balance-card total-card">
-                            <div>
-                                <span>Saldo Total</span>
-                                <strong id="wallet-total">$ —</strong>
-                                <small>Total en tu billetera</small>
-                            </div>
-                            <b>▣</b>
-                        </article>
-                        <article class="balance-card retained-card">
-                            <div>
-                                <span>Saldo Retenido</span>
-                                <strong id="wallet-retained">$ —</strong>
-                                <small>Fondos en garantía</small>
-                            </div>
-                            <b>▢</b>
-                        </article>
-                        <article class="balance-card available-card">
-                            <div>
-                                <span>Saldo Disponible</span>
-                                <strong id="wallet-available">$ —</strong>
-                                <small>Disponible para usar</small>
-                            </div>
-                            <b>✓</b>
-                        </article>
-                    </div>
-                    <div class="wallet-panels">
-                        <article class="content-card">
-                            <h2>Depósito rápido</h2>
-                            <p>Agregar fondos a tu billetera</p>
-                            <div class="amount-options">
-                                <button data-amount="10000">$10.000</button>
-                                <button data-amount="20000">$20.000</button>
-                                <button data-amount="50000">$50.000</button>
-                                <button data-amount="100000">$100.000</button>
-                                <button data-amount="">Otro</button>
-                            </div>
-                            <label class="deposit-input">
-                                <span>$</span>
-                                <input id="deposit-amount"
-                                       type="number"
-                                       min="1"
-                                       placeholder="0"
-                                       aria-label="Monto a depositar">
-                            </label>
-                            <button id="deposit-button" class="primary-action" disabled>
-                                ▣&nbsp; Depositar fondos
-                            </button>
-                            <small class="integration-note">
-                                Se habilitará al integrar la billetera con la API.
-                            </small>
-                        </article>
-                        <article class="content-card">
-                            <div class="card-heading">
                                 <div>
                                     <span>Saldo Total</span>
                                     <strong id="wallet-total">$ —</strong>
@@ -869,6 +826,81 @@
                                 class="primary-action"
                                 type="submit">
                             Crear cuenta
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         EDITAR PERFIL
+         ========================= -->
+
+    <div
+        class="modal fade"
+        id="profile-modal"
+        tabindex="-1"
+        aria-labelledby="profile-modal-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content auth-modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="profile-modal-title">Editar perfil</h2>
+                        <p class="mb-0">Actualizá los datos visibles de tu cuenta.</p>
+                    </div>
+                    <button
+                        class="btn-close"
+                        type="button"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar"
+                    ></button>
+                </div>
+                <form id="profile-form">
+                    <div class="modal-body auth-form">
+                        <label class="form-field">
+                            <span>Nombre</span>
+                            <input
+                                name="nombre"
+                                type="text"
+                                maxlength="100"
+                                autocomplete="name"
+                                required
+                            >
+                        </label>
+                        <label class="form-field">
+                            <span>Email</span>
+                            <input
+                                name="email"
+                                type="email"
+                                maxlength="150"
+                                autocomplete="email"
+                                required
+                            >
+                        </label>
+                        <div
+                            id="profile-feedback"
+                            class="auth-feedback"
+                            role="status"
+                            aria-live="polite"
+                        ></div>
+                    </div>
+                    <div class="modal-footer auth-modal-footer">
+                        <button
+                            class="secondary-action"
+                            type="button"
+                            data-bs-dismiss="modal"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            id="profile-submit"
+                            class="primary-action"
+                            type="submit"
+                        >
+                            Guardar cambios
                         </button>
                     </div>
                 </form>
