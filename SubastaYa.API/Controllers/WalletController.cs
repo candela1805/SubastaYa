@@ -93,4 +93,44 @@ public sealed class WalletController : ControllerBase
             return BadRequest(ex.Message);
         }
     }
+
+    [HttpGet("transactions")]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<WalletTransactionResponse>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<WalletTransactionResponse>>>
+        ObtenerMovimientos(CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var movimientos = await _walletService.ObtenerMovimientosAsync(
+            userId,
+            cancellationToken);
+
+        return movimientos is null
+            ? NotFound("No se encontró la billetera del usuario.")
+            : Ok(movimientos);
+    }
+
+    [HttpGet("retained-funds")]
+    [ProducesResponseType(
+        typeof(RetainedFundsResponse),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RetainedFundsResponse>>
+        ObtenerFondosRetenidos(CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var fondos = await _walletService.ObtenerFondosRetenidosAsync(
+            userId,
+            cancellationToken);
+
+        return fondos is null
+            ? NotFound("No se encontró la billetera del usuario.")
+            : Ok(fondos);
+    }
 }

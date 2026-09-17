@@ -247,86 +247,121 @@
             <div class="workspace-layout">
                 <aside class="side-panel">
                     <h2>Mi Billetera</h2>
-                    <nav class="side-nav">
-                        <a class="active" href="#wallet">▣ Resumen</a>
-                        <a href="#wallet">♨ Depositar fondos</a>
-                        <a href="#wallet">☷ Movimientos</a>
-                        <a href="#wallet">▣ Fondos retenidos</a>
-                        <a href="#wallet">▭ Métodos de pago</a>
-                        <a href="#wallet">⚙ Configuración</a>
+                    <nav class="side-nav wallet-side-nav">
+                        <button class="active" type="button" data-wallet-target="summary">▣ Resumen</button>
+                        <button type="button" data-wallet-target="deposit">♨ Depositar fondos</button>
+                        <button type="button" data-wallet-target="transactions">☷ Movimientos</button>
+                        <button type="button" data-wallet-target="retained">▣ Fondos retenidos</button>
+                        <button type="button" data-wallet-target="methods">▭ Métodos de pago</button>
                     </nav>
                 </aside>
                 <div class="workspace-content">
-                    <h1 class="section-title">Resumen de Saldo</h1>
-                    <div class="balance-grid">
-                        <article class="balance-card total-card">
-                            <div>
-                                <span>Saldo Total</span>
-                                <strong id="wallet-total">$ —</strong>
-                                <small>Total en tu billetera</small>
-                            </div>
-                            <b>▣</b>
-                        </article>
-                        <article class="balance-card retained-card">
-                            <div>
-                                <span>Saldo Retenido</span>
-                                <strong id="wallet-retained">$ —</strong>
-                                <small>Fondos en garantía</small>
-                            </div>
-                            <b>▢</b>
-                        </article>
-                        <article class="balance-card available-card">
-                            <div>
-                                <span>Saldo Disponible</span>
-                                <strong id="wallet-available">$ —</strong>
-                                <small>Disponible para usar</small>
-                            </div>
-                            <b>✓</b>
-                        </article>
-                    </div>
-                    <div class="wallet-panels">
-                        <article class="content-card">
-                            <h2>Depósito rápido</h2>
-                            <p>Agregar fondos a tu billetera</p>
-                            <div class="amount-options">
-                                <button data-amount="10000">$10.000</button>
-                                <button data-amount="20000">$20.000</button>
-                                <button data-amount="50000">$50.000</button>
-                                <button data-amount="100000">$100.000</button>
-                                <button data-amount="">Otro</button>
-                            </div>
-                            <label class="deposit-input">
-                                <span>$</span>
-                                <input
-                                    id="deposit-amount"
-                                    type="number"
-                                    min="1"
-                                    placeholder="0"
-                                    aria-label="Monto a depositar"
-                                >
-                            </label>
-                            <button id="deposit-button" class="primary-action" disabled>
-                                ▣&nbsp; Depositar fondos
-                            </button>
-                            <small class="integration-note">
-                                Se habilitará al integrar la billetera con la API.
-                            </small>
-                        </article>
-                        <article class="content-card">
-                            <div class="card-heading">
+                    <section class="wallet-section active" data-wallet-section="summary">
+                        <h1 class="section-title">Resumen de Saldo</h1>
+                        <div class="balance-grid">
+                            <article class="balance-card total-card">
                                 <div>
-                                    <h2>Últimos movimientos</h2>
-                                    <p>Actividad reciente de tu billetera</p>
+                                    <span>Saldo Total</span>
+                                    <strong id="wallet-total">$ —</strong>
+                                    <small>Total en tu billetera</small>
                                 </div>
-                                <button disabled>Ver todos</button>
-                            </div>
-                            <div id="wallet-movements" class="empty-state">
-                                <i>☷</i>
-                                <strong>Sin movimientos para mostrar</strong>
-                                <p>Los movimientos aparecerán al conectar el historial de la billetera.</p>
-                            </div>
+                                <b>▣</b>
+                            </article>
+                            <article class="balance-card retained-card">
+                                <div>
+                                    <span>Saldo Retenido</span>
+                                    <strong id="wallet-retained">$ —</strong>
+                                    <small>Fondos en garantía</small>
+                                </div>
+                                <b>▢</b>
+                            </article>
+                            <article class="balance-card available-card">
+                                <div>
+                                    <span>Saldo Disponible</span>
+                                    <strong id="wallet-available">$ —</strong>
+                                    <small>Disponible para usar</small>
+                                </div>
+                                <b>✓</b>
+                            </article>
+                        </div>
+                        <div class="wallet-panels">
+                            <article class="content-card">
+                                <h2>Depósito rápido</h2>
+                                <p>Agregar fondos a tu billetera</p>
+                                <form data-deposit-form="quick">
+                                    <div class="amount-options">
+                                        <button type="button" data-amount="10000">$10.000</button>
+                                        <button type="button" data-amount="20000">$20.000</button>
+                                        <button type="button" data-amount="50000">$50.000</button>
+                                        <button type="button" data-amount="100000">$100.000</button>
+                                        <button type="button" data-amount="">Otro</button>
+                                    </div>
+                                    <label class="deposit-input">
+                                        <span>$</span>
+                                        <input name="monto" type="number" min="0.01" step="0.01" placeholder="0" required>
+                                    </label>
+                                    <label class="wallet-form-field">
+                                        <span>Método</span>
+                                        <select name="metodo" required></select>
+                                    </label>
+                                    <div data-payment-flow></div>
+                                    <div class="payment-process-status" data-payment-status aria-live="polite"></div>
+                                    <button class="primary-action" type="submit">▣&nbsp; Depositar fondos</button>
+                                </form>
+                            </article>
+                            <article class="content-card">
+                                <div class="card-heading">
+                                    <div>
+                                        <h2>Últimos movimientos</h2>
+                                        <p>Actividad reciente de tu billetera</p>
+                                    </div>
+                                    <button type="button" data-wallet-target="transactions">Ver todos</button>
+                                </div>
+                                <div id="wallet-recent-movements" class="wallet-list"></div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="wallet-section" data-wallet-section="deposit">
+                        <h1 class="section-title">Depositar fondos</h1>
+                        <article class="content-card wallet-operation-card">
+                            <p>Elegí un importe y un método para acreditar fondos en tu billetera.</p>
+                            <form data-deposit-form="full">
+                                <label class="wallet-form-field">
+                                    <span>Monto</span>
+                                    <input name="monto" type="number" min="0.01" step="0.01" required>
+                                </label>
+                                <label class="wallet-form-field">
+                                    <span>Método</span>
+                                    <select name="metodo" required></select>
+                                </label>
+                                <div data-payment-flow></div>
+                                <div class="payment-process-status" data-payment-status aria-live="polite"></div>
+                                <button class="primary-action" type="submit">Confirmar depósito</button>
+                            </form>
                         </article>
-                    </div>
+                    </section>
+
+                    <section class="wallet-section" data-wallet-section="transactions">
+                        <h1 class="section-title">Movimientos</h1>
+                        <article class="content-card">
+                            <div id="wallet-all-movements" class="wallet-list"></div>
+                        </article>
+                    </section>
+
+                    <section class="wallet-section" data-wallet-section="retained">
+                        <h1 class="section-title">Fondos retenidos</h1>
+                        <p class="wallet-section-description">Fondos reservados mientras tus pujas continúan vigentes.</p>
+                        <article class="content-card">
+                            <div id="wallet-retained-list" class="wallet-list"></div>
+                        </article>
+                    </section>
+
+                    <section class="wallet-section" data-wallet-section="methods">
+                        <h1 class="section-title">Métodos de pago</h1>
+                        <p class="wallet-section-description">Elegí el método que aparecerá seleccionado al depositar.</p>
+                        <div id="wallet-payment-methods" class="payment-method-grid"></div>
+                    </section>
                 </div>
             </div>
         </section>

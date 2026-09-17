@@ -107,4 +107,95 @@ public sealed class WalletService : IWalletService
             throw;
         }
     }
+
+    public async Task<IReadOnlyList<WalletTransactionResponse>?>
+        ObtenerMovimientosAsync(
+            Guid usuarioId,
+            CancellationToken cancellationToken = default)
+    {
+        var billeteraId = await _dbContext.Billeteras
+            .AsNoTracking()
+            .Where(billetera => billetera.UsuarioId == usuarioId)
+            .Select(billetera => (Guid?)billetera.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!billeteraId.HasValue)
+            return null;
+
+        var movimientos = await _dbContext.TransaccionLedgers
+            .AsNoTracking()
+            .Where(movimiento => movimiento.BilleteraId == billeteraId.Value)
+            .OrderByDescending(movimiento => movimiento.FechaUtc)
+            .ThenByDescending(movimiento => movimiento.Id)
+            .Select(movimiento => new
+            {
+                movimiento.Id,
+                movimiento.Tipo,
+                movimiento.Monto,
+                movimiento.Descripcion,
+                movimiento.FechaUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        return movimientos.Select(movimiento => new WalletTransactionResponse
+        {
+            Id = movimiento.Id,
+            Tipo = movimiento.Tipo.ToString(),
+            Monto = movimiento.Monto,
+            Descripcion = movimiento.Descripcion,
+            FechaUtc = movimiento.FechaUtc
+        }).ToList();
+    }
+
+    public async Task<RetainedFundsResponse?> ObtenerFondosRetenidosAsync(
+        Guid usuarioId,
+        CancellationToken cancellationToken = default)
+    {
+        var billetera = await _dbContext.Billeteras
+            .AsNoTracking()
+            .Where(item => item.UsuarioId == usuarioId)
+            .Select(item => new { item.SaldoRetenido })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (billetera is null)
+            return null;
+
+        var retenciones = await (
+                from puja in _dbContext.Pujas.AsNoTracking()
+                join subasta in _dbContext.Subastas.AsNoTracking()
+                    on puja.SubastaId equals subasta.Id
+                where puja.UsuarioId == usuarioId &&
+                      puja.EsGanadora &&
+                      (subasta.Estado == EstadoSubasta.Programada ||
+                       subasta.Estado == EstadoSubasta.Activa)
+                orderby puja.FechaUtc descending, puja.Id descending
+                select new
+                {
+                    SubastaId = subasta.Id,
+                    Subasta = subasta.Titulo,
+                    Monto = puja.Monto,
+                    FechaUtc = puja.FechaUtc,
+                    subasta.Estado
+                })
+            .ToListAsync(cancellationToken);
+
+        var items = retenciones.Select(retencion => new RetainedFundItemResponse
+        {
+            SubastaId = retencion.SubastaId,
+            Subasta = retencion.Subasta,
+            Monto = retencion.Monto,
+            FechaUtc = retencion.FechaUtc,
+            Estado = retencion.Estado.ToString()
+        }).ToList();
+
+        var identificado = items.Sum(item => item.Monto);
+
+        return new RetainedFundsResponse
+        {
+            TotalRetenido = billetera.SaldoRetenido,
+            TotalIdentificado = identificado,
+            Diferencia = billetera.SaldoRetenido - identificado,
+            Items = items
+        };
+    }
 }
