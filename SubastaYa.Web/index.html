@@ -64,7 +64,7 @@
                                 <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"/>
                             </svg>
                         </span>
-                        <span>Usuario</span>
+                        <span id="active-user-name">Usuario</span>
                         <span aria-hidden="true">⌄</span>
                     </button>
                 </div>
@@ -106,10 +106,8 @@
                     </label>
                     <label class="filter-field">
                         <span>Categoría</span>
-                        <select name="categoria">
+                        <select id="catalog-category-filter" name="categoria">
                             <option value="">Todas</option>
-                            <option value="Tecnología">Tecnología</option>
-                            <option value="Hogar y Oficina">Hogar y Oficina</option>
                         </select>
                     </label>
                     <label class="filter-field">
@@ -375,29 +373,34 @@
                         </div>
                     </section>
                     <section id="publications" class="publications-section">
-                        <h2 class="section-title">Mis Publicaciones</h2>
-                        <div class="tabs">
-                            <button class="active">Activas <span>0</span></button>
-                            <button>Finalizadas <span>0</span></button>
-                            <button>Desiertas <span>0</span></button>
+                        <header class="publications-heading">
+                            <h2 class="section-title">Mis Publicaciones</h2>
+                            <button
+                                id="open-auction-form"
+                                class="primary-action create-auction-button"
+                                type="button"
+                            >
+                                ＋ Crear subasta
+                            </button>
+                        </header>
+                        <div class="tabs" id="publication-filters">
+                            <button class="active" type="button" data-publication-state="all">
+                                Todas <span id="publication-count-all">0</span>
+                            </button>
+                            <button type="button" data-publication-state="Activa">
+                                Activas <span id="publication-count-active">0</span>
+                            </button>
+                            <button type="button" data-publication-state="Finalizada">
+                                Finalizadas <span id="publication-count-finished">0</span>
+                            </button>
+                            <button type="button" data-publication-state="Desierta">
+                                Desiertas <span id="publication-count-deserted">0</span>
+                            </button>
                         </div>
-                        <div class="activity-table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Subasta</th>
-                                        <th>Precio actual</th>
-                                        <th>Ofertas</th>
-                                        <th>Estado</th>
-                                        <th>Tiempo restante</th>
-                                        <th>Acción</th>
-                                    </tr>
-                                </thead>
-                            </table>
+                        <div id="publications-container" class="publication-grid">
                             <div class="empty-state">
-                                <i>▧</i>
-                                <strong>Sin publicaciones para mostrar</strong>
-                                <p>Tus subastas aparecerán aquí cuando el módulo esté integrado.</p>
+                                <i>◴</i>
+                                <strong>Cargando publicaciones</strong>
                             </div>
                         </div>
                     </section>
@@ -405,6 +408,209 @@
             </div>
         </section>
     </main>
+
+    <!-- =========================
+         CREAR SUBASTA
+         ========================= -->
+
+    <div
+        class="modal fade"
+        id="auction-form-modal"
+        tabindex="-1"
+        aria-labelledby="auction-form-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content auction-form-modal">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="auction-form-title">Crear subasta</h2>
+                        <p>La publicación quedará asociada a <span id="auction-seller-name"></span>.</p>
+                    </div>
+                    <button
+                        class="btn-close"
+                        type="button"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar"
+                    ></button>
+                </div>
+                <form id="auction-form">
+                    <div class="modal-body auction-form-grid">
+                        <label class="form-field full-width">
+                            <span>Título</span>
+                            <input name="titulo" maxlength="150" required>
+                        </label>
+                        <label class="form-field full-width">
+                            <span>Descripción</span>
+                            <textarea name="descripcion" maxlength="2000" rows="4" required></textarea>
+                        </label>
+                        <label class="form-field">
+                            <span>Categoría</span>
+                            <select
+                                name="categoria"
+                                data-category-select
+                                data-placeholder="Seleccionar categoría"
+                                required
+                            >
+                                <option value="">Seleccionar categoría</option>
+                            </select>
+                        </label>
+                        <label class="form-field" data-new-category-field hidden>
+                            <span>Nueva categoría</span>
+                            <input
+                                name="nuevaCategoria"
+                                maxlength="100"
+                                placeholder="Nombre de la categoría"
+                            >
+                        </label>
+                        <label class="form-field">
+                            <span>URL de imagen (opcional)</span>
+                            <input name="imagenUrl" type="url" maxlength="500">
+                        </label>
+                        <label class="form-field">
+                            <span>Precio inicial</span>
+                            <input name="precioInicial" type="number" min="0.01" step="0.01" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Incremento mínimo</span>
+                            <input name="incrementoMinimo" type="number" min="0.01" step="0.01" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Fecha de inicio</span>
+                            <input name="fechaInicioUtc" type="datetime-local" required>
+                        </label>
+                        <label class="form-field">
+                            <span>Fecha de finalización</span>
+                            <input name="fechaFinUtc" type="datetime-local" required>
+                        </label>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="secondary-action" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+                        <button id="create-auction-submit" type="submit" class="primary-action">
+                            Publicar subasta
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         EDITAR PUBLICACIÓN
+         ========================= -->
+
+    <div
+        class="modal fade"
+        id="edit-auction-modal"
+        tabindex="-1"
+        aria-labelledby="edit-auction-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content auction-form-modal">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="edit-auction-title">Editar publicación</h2>
+                        <p>Los precios y el incremento no pueden modificarse después de publicar.</p>
+                    </div>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <form id="edit-auction-form">
+                    <input name="id" type="hidden">
+                    <div class="modal-body auction-form-grid">
+                        <label class="form-field full-width">
+                            <span>Título</span>
+                            <input name="titulo" maxlength="150" required>
+                        </label>
+                        <label class="form-field full-width">
+                            <span>Descripción</span>
+                            <textarea name="descripcion" maxlength="2000" rows="4" required></textarea>
+                        </label>
+                        <label class="form-field">
+                            <span>Categoría</span>
+                            <select
+                                name="categoria"
+                                data-category-select
+                                data-placeholder="Seleccionar categoría"
+                                required
+                            >
+                                <option value="">Seleccionar categoría</option>
+                            </select>
+                        </label>
+                        <label class="form-field" data-new-category-field hidden>
+                            <span>Nueva categoría</span>
+                            <input
+                                name="nuevaCategoria"
+                                maxlength="100"
+                                placeholder="Nombre de la categoría"
+                            >
+                        </label>
+                        <label class="form-field">
+                            <span>URL de imagen (opcional)</span>
+                            <input name="imagenUrl" type="url" maxlength="500">
+                        </label>
+                        <label class="form-field">
+                            <span>Precio inicial</span>
+                            <input name="precioInicial" readonly>
+                            <small>No modificable después de publicar.</small>
+                        </label>
+                        <label class="form-field">
+                            <span>Incremento mínimo</span>
+                            <input name="incrementoMinimo" readonly>
+                            <small>No modificable después de publicar.</small>
+                        </label>
+                        <label class="form-field full-width">
+                            <span>Fecha de finalización</span>
+                            <input name="fechaFinUtc" type="datetime-local" required>
+                        </label>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="secondary-action" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+                        <button id="edit-auction-submit" type="submit" class="primary-action">
+                            Guardar cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         ELIMINAR PUBLICACIÓN
+         ========================= -->
+
+    <div
+        class="modal fade"
+        id="delete-auction-modal"
+        tabindex="-1"
+        aria-labelledby="delete-auction-title"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content confirmation-modal">
+                <div class="modal-header">
+                    <h2 class="modal-title" id="delete-auction-title">Eliminar publicación</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Seguro que querés eliminar esta publicación?</p>
+                    <strong id="delete-auction-name"></strong>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="secondary-action" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button id="confirm-delete-auction" type="button" class="danger-action">
+                        Eliminar publicación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- =========================
          NOTIFICACIONES

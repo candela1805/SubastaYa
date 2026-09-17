@@ -57,6 +57,17 @@ public sealed class AuctionsController : ControllerBase
         return Ok(resultado);
     }
 
+    [HttpGet("categories")]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<string>),
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<string>>> ObtenerCategorias(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await _auctionService.ObtenerCategoriasAsync(
+            cancellationToken));
+    }
+
     [HttpPost]
     [Authorize]
     [ProducesResponseType(typeof(AuctionResponse), StatusCodes.Status201Created)]
@@ -101,5 +112,103 @@ public sealed class AuctionsController : ControllerBase
             cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, resultado);
+    }
+
+    [HttpGet("mine")]
+    [Authorize]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<AuctionResponse>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<AuctionResponse>>>
+        ObtenerMisPublicaciones(CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+        {
+            return Unauthorized(new
+            {
+                message = "No se pudo identificar al usuario autenticado."
+            });
+        }
+
+        var resultado = await _auctionService.ObtenerPublicacionesAsync(
+            userId,
+            cancellationToken);
+
+        return Ok(resultado);
+    }
+
+    [HttpPut("{subastaId:guid}")]
+    [Authorize]
+    [ProducesResponseType(typeof(AuctionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AuctionResponse>> ActualizarPublicacion(
+        Guid subastaId,
+        UpdateAuctionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Titulo) ||
+            string.IsNullOrWhiteSpace(request.Descripcion) ||
+            string.IsNullOrWhiteSpace(request.Categoria))
+        {
+            return BadRequest(new
+            {
+                message = "Título, descripción y categoría son obligatorios."
+            });
+        }
+
+        try
+        {
+            return Ok(await _auctionService.ActualizarPublicacionAsync(
+                subastaId,
+                userId,
+                request,
+                cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (AuctionOperationConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{subastaId:guid}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> EliminarPublicacion(
+        Guid subastaId,
+        CancellationToken cancellationToken)
+    {
+        if (!_currentUserService.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        try
+        {
+            await _auctionService.EliminarPublicacionAsync(
+                subastaId,
+                userId,
+                cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (AuctionOperationConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 }

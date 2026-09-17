@@ -355,12 +355,17 @@ public sealed class ApplicationDbContext : DbContext
     {
         var auditoriaAlterada = ChangeTracker
             .Entries<AuditoriaLog>()
-            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+            .Any(entry =>
+                entry.State == EntityState.Modified ||
+                entry.State == EntityState.Deleted &&
+                !ChangeTracker.Entries<Subasta>().Any(subasta =>
+                    subasta.State == EntityState.Deleted &&
+                    subasta.Entity.Id == entry.Entity.SubastaId));
 
         if (auditoriaAlterada)
         {
             throw new InvalidOperationException(
-                "Los registros de auditoría son inmutables.");
+                "Los registros de auditoría son inmutables salvo al eliminar su subasta sin pujas.");
         }
 
         var ledgerAlterado = ChangeTracker
