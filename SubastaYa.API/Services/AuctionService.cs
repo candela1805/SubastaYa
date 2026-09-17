@@ -177,6 +177,54 @@ public sealed class AuctionService : IAuctionService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<BidActivityResponse>>
+        ObtenerActividadesDePujasAsync(
+            Guid usuarioId,
+            CancellationToken cancellationToken = default)
+    {
+        var ofertasPropias = _dbContext.Pujas
+            .AsNoTracking()
+            .Where(puja => puja.UsuarioId == usuarioId)
+            .GroupBy(puja => puja.SubastaId)
+            .Select(grupo => new
+            {
+                SubastaId = grupo.Key,
+                MiOferta = grupo.Max(puja => puja.Monto)
+            });
+
+        return await (
+            from oferta in ofertasPropias
+            join subasta in _dbContext.Subastas.AsNoTracking()
+                on oferta.SubastaId equals subasta.Id
+            join liquidacion in _dbContext.LiquidacionesSubasta.AsNoTracking()
+                on subasta.Id equals liquidacion.SubastaId into liquidaciones
+            from liquidacion in liquidaciones.DefaultIfEmpty()
+            orderby subasta.FechaFinUtc descending, subasta.Id
+            select new BidActivityResponse
+            {
+                SubastaId = subasta.Id,
+                Titulo = subasta.Titulo,
+                Descripcion = subasta.Descripcion ?? string.Empty,
+                ImagenUrl = subasta.ImagenUrl,
+                Categoria = subasta.Categoria,
+                PrecioInicial = subasta.PrecioInicial,
+                MiOferta = oferta.MiOferta,
+                OfertaActual = subasta.PrecioActual,
+                IncrementoMinimo = subasta.IncrementoMinimo,
+                FechaInicioUtc = subasta.FechaInicioUtc,
+                FechaFinUtc = subasta.FechaFinUtc,
+                Estado = subasta.Estado,
+                Resultado = subasta.Estado == EstadoSubasta.Programada ||
+                    subasta.Estado == EstadoSubasta.Activa
+                        ? "EnCurso"
+                        : liquidacion != null &&
+                            liquidacion.CompradorId == usuarioId
+                            ? "Ganada"
+                            : "Perdida"
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<AuctionResponse> ActualizarPublicacionAsync(
         Guid subastaId,
         Guid vendedorId,

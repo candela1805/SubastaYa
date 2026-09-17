@@ -28,6 +28,10 @@ public interface IAuctionService
         Guid vendedorId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<BidActivityResponse>> ObtenerActividadesDePujasAsync(
+        Guid usuarioId,
+        CancellationToken cancellationToken = default);
+
     Task<AuctionResponse> ActualizarPublicacionAsync(
         Guid subastaId,
         Guid vendedorId,

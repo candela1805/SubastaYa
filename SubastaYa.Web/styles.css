@@ -1307,6 +1307,70 @@ select:focus-visible {
     width: 32%;
 }
 
+.activity-table-wrap td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf0f4;
+    color: #344054;
+    font-size: 12px;
+    vertical-align: middle;
+}
+
+.activity-table-wrap tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.activity-auction {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.activity-auction img {
+    width: 52px;
+    height: 40px;
+    flex: 0 0 auto;
+    border-radius: 5px;
+    object-fit: cover;
+}
+
+.activity-auction strong,
+.activity-auction small {
+    display: block;
+}
+
+.activity-auction small {
+    margin-top: 2px;
+    color: #667085;
+}
+
+.activity-status {
+    display: inline-block;
+    padding: 4px 7px;
+    border-radius: 5px;
+    background: #eef4ff;
+    color: var(--blue);
+    font-weight: 700;
+}
+
+.activity-status-ganada {
+    background: #ecfdf3;
+    color: #027a48;
+}
+
+.activity-status-perdida {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.activity-view-action {
+    padding: 6px 10px;
+    border: 1px solid var(--blue);
+    border-radius: 5px;
+    color: var(--blue);
+    background: #fff;
+    font-weight: 700;
+}
+
 .publications-section {
     margin-top: 29px;
 }
