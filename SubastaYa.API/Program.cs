@@ -66,6 +66,7 @@ builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<IAuctionClosingService, AuctionClosingService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<DevelopmentDataSeeder>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services
     .AddOptions<AuctionClosingWorkerOptions>()
@@ -117,45 +118,17 @@ if (app.Environment.IsDevelopment())
                 "DevelopmentAuthentication:UserId debe ser un GUID válido.");
         }
 
-        var usuarioDemo = await dbContext.Usuarios
-            .Include(usuario => usuario.Billetera)
-            .SingleOrDefaultAsync(usuario => usuario.Id == usuarioDemoId);
-
-        if (usuarioDemo is null)
+        if (usuarioDemoId != DevelopmentDataSeeder.DemoUserId)
         {
-            usuarioDemo = new Usuario
-            {
-                Id = usuarioDemoId,
-                Nombre = developmentAuthentication.Name,
-                Email = developmentAuthentication.Email,
-                PasswordHash = "DEMO_NO_USAR_EN_PRODUCCION",
-                FechaRegistro = DateTimeOffset.UtcNow
-            };
-
-            usuarioDemo.Billetera = new Billetera
-            {
-                UsuarioId = usuarioDemoId,
-                Usuario = usuarioDemo,
-                SaldoTotal = 0,
-                SaldoRetenido = 0,
-                SaldoDisponible = 0
-            };
-
-            dbContext.Usuarios.Add(usuarioDemo);
-        }
-        else if (usuarioDemo.Billetera is null)
-        {
-            dbContext.Billeteras.Add(new Billetera
-            {
-                UsuarioId = usuarioDemo.Id,
-                Usuario = usuarioDemo,
-                SaldoTotal = 0,
-                SaldoRetenido = 0,
-                SaldoDisponible = 0
-            });
+            throw new InvalidOperationException(
+                "DevelopmentAuthentication:UserId no coincide con el usuario demo esperado.");
         }
 
-        await dbContext.SaveChangesAsync();
+        var seeder = scope.ServiceProvider
+            .GetRequiredService<DevelopmentDataSeeder>();
+        await seeder.SeedAsync(
+            developmentAuthentication.Name,
+            developmentAuthentication.Email);
     }
 
     app.UseCors("Frontend");
