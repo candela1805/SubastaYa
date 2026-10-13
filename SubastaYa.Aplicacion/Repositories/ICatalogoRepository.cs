@@ -18,4 +18,5 @@ public interface ICatalogoRepository
 
     Task<IReadOnlyList<string>> ObtenerCategoriasAsync(
         CancellationToken cancellationToken = default);
+    
 }

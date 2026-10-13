@@ -1,7 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SubastaYa.Aplicacion.Contracts.Auctions;
 using SubastaYa.Aplicacion.Repositories;
 using SubastaYa.Dominio.Models;
 using SubastaYa.Infraestructura.Data;
+using SubastaYa.Aplicacion.Exceptions;
 
 namespace SubastaYa.Infraestructura.Repositories;
 
@@ -20,9 +22,24 @@ public sealed class SubastaRepository : ISubastaRepository
     }
 
     public async Task GuardarCambiosAsync(
-        CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictoConcurrenciaException(
+                "Los datos cambiaron mientras se guardaba la operación.",
+                ex);
+        }
+        catch (DbUpdateException ex)
+        {
+            throw new PersistenciaException(
+                "No se pudieron guardar los cambios.",
+                ex);
+        }
     }
 
     public async Task<IReadOnlyList<Subasta>> ObtenerPorVendedorAsync(
@@ -90,5 +107,52 @@ public sealed class SubastaRepository : ISubastaRepository
 
         _dbContext.AuditoriaLogs.RemoveRange(auditorias);
         _dbContext.Subastas.Remove(subasta);
+    }
+    public async Task<IReadOnlyList<BidActivityResponse>>
+        ObtenerActividadesDePujasAsync(
+            Guid usuarioId,
+            CancellationToken cancellationToken = default)
+    {
+        var ofertasPropias = _dbContext.Pujas
+            .AsNoTracking()
+            .Where(puja => puja.UsuarioId == usuarioId)
+            .GroupBy(puja => puja.SubastaId)
+            .Select(grupo => new
+            {
+                SubastaId = grupo.Key,
+                MiOferta = grupo.Max(puja => puja.Monto)
+            });
+
+        return await (
+            from oferta in ofertasPropias
+            join subasta in _dbContext.Subastas.AsNoTracking()
+                on oferta.SubastaId equals subasta.Id
+            join liquidacion in _dbContext.LiquidacionesSubasta.AsNoTracking()
+                on subasta.Id equals liquidacion.SubastaId into liquidaciones
+            from liquidacion in liquidaciones.DefaultIfEmpty()
+            orderby subasta.FechaFinUtc descending, subasta.Id
+            select new BidActivityResponse
+            {
+                SubastaId = subasta.Id,
+                Titulo = subasta.Titulo,
+                Descripcion = subasta.Descripcion ?? string.Empty,
+                ImagenUrl = subasta.ImagenUrl,
+                Categoria = subasta.Categoria,
+                PrecioInicial = subasta.PrecioInicial,
+                MiOferta = oferta.MiOferta,
+                OfertaActual = subasta.PrecioActual,
+                IncrementoMinimo = subasta.IncrementoMinimo,
+                FechaInicioUtc = subasta.FechaInicioUtc,
+                FechaFinUtc = subasta.FechaFinUtc,
+                Estado = subasta.Estado,
+                Resultado = subasta.Estado == EstadoSubasta.Programada ||
+                    subasta.Estado == EstadoSubasta.Activa
+                        ? "EnCurso"
+                        : liquidacion != null &&
+                            liquidacion.CompradorId == usuarioId
+                            ? "Ganada"
+                            : "Perdida"
+            })
+            .ToListAsync(cancellationToken);
     }
 }

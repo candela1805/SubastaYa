@@ -1,4 +1,5 @@
 ﻿using SubastaYa.Dominio.Models;
+using SubastaYa.Aplicacion.Contracts.Auctions;
 
 namespace SubastaYa.Aplicacion.Repositories;
 
@@ -18,6 +19,10 @@ public interface ISubastaRepository
     Task<Subasta?> ObtenerPorIdAsync(
         Guid subastaId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<BidActivityResponse>> ObtenerActividadesDePujasAsync(
+    Guid usuarioId,
+    CancellationToken cancellationToken = default);
 
     Task<Subasta?> ObtenerDelVendedorAsync(
         Guid subastaId,

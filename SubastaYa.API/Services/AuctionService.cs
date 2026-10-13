@@ -1,16 +1,15 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SubastaYa.Aplicacion.Contracts.Auctions;
-using SubastaYa.Infraestructura.Data;
 using SubastaYa.API.Hubs;
 using SubastaYa.Dominio.Models;
 using SubastaYa.Aplicacion.Repositories;
+using SubastaYa.Aplicacion.Exceptions;
 
 namespace SubastaYa.API.Services;
 
 public sealed class AuctionService : IAuctionService
 {
-    private readonly ApplicationDbContext _dbContext;
+   
     private readonly IHubContext<AuctionHub> _hubContext;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AuctionService> _logger;
@@ -18,14 +17,12 @@ public sealed class AuctionService : IAuctionService
     private readonly ISubastaRepository _subastaRepository;
 
     public AuctionService(
-    ApplicationDbContext dbContext,
     IHubContext<AuctionHub> hubContext,
     TimeProvider timeProvider,
     ILogger<AuctionService> logger,
     ICatalogoRepository catalogoRepository,
     ISubastaRepository subastaRepository)
     {
-        _dbContext = dbContext;
         _hubContext = hubContext;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -105,53 +102,13 @@ public sealed class AuctionService : IAuctionService
             .Select(MapearRespuesta)
             .ToList();
     }
-
-    public async Task<IReadOnlyList<BidActivityResponse>>
-        ObtenerActividadesDePujasAsync(
-            Guid usuarioId,
-            CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<BidActivityResponse>> ObtenerActividadesDePujasAsync(
+    Guid usuarioId,
+    CancellationToken cancellationToken = default)
     {
-        var ofertasPropias = _dbContext.Pujas
-            .AsNoTracking()
-            .Where(puja => puja.UsuarioId == usuarioId)
-            .GroupBy(puja => puja.SubastaId)
-            .Select(grupo => new
-            {
-                SubastaId = grupo.Key,
-                MiOferta = grupo.Max(puja => puja.Monto)
-            });
-
-        return await (
-            from oferta in ofertasPropias
-            join subasta in _dbContext.Subastas.AsNoTracking()
-                on oferta.SubastaId equals subasta.Id
-            join liquidacion in _dbContext.LiquidacionesSubasta.AsNoTracking()
-                on subasta.Id equals liquidacion.SubastaId into liquidaciones
-            from liquidacion in liquidaciones.DefaultIfEmpty()
-            orderby subasta.FechaFinUtc descending, subasta.Id
-            select new BidActivityResponse
-            {
-                SubastaId = subasta.Id,
-                Titulo = subasta.Titulo,
-                Descripcion = subasta.Descripcion ?? string.Empty,
-                ImagenUrl = subasta.ImagenUrl,
-                Categoria = subasta.Categoria,
-                PrecioInicial = subasta.PrecioInicial,
-                MiOferta = oferta.MiOferta,
-                OfertaActual = subasta.PrecioActual,
-                IncrementoMinimo = subasta.IncrementoMinimo,
-                FechaInicioUtc = subasta.FechaInicioUtc,
-                FechaFinUtc = subasta.FechaFinUtc,
-                Estado = subasta.Estado,
-                Resultado = subasta.Estado == EstadoSubasta.Programada ||
-                    subasta.Estado == EstadoSubasta.Activa
-                        ? "EnCurso"
-                        : liquidacion != null &&
-                            liquidacion.CompradorId == usuarioId
-                            ? "Ganada"
-                            : "Perdida"
-            })
-            .ToListAsync(cancellationToken);
+        return _subastaRepository.ObtenerActividadesDePujasAsync(
+            usuarioId,
+            cancellationToken);
     }
 
     public async Task<AuctionResponse> ActualizarPublicacionAsync(
@@ -207,7 +164,7 @@ public sealed class AuctionService : IAuctionService
         {
             await _subastaRepository.GuardarCambiosAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (ConflictoConcurrenciaException)
         {
             throw new AuctionOperationConflictException(
                 "La publicación cambió durante la edición. Actualizá los datos e intentá nuevamente.");
@@ -254,12 +211,12 @@ public sealed class AuctionService : IAuctionService
         {
             await _subastaRepository.GuardarCambiosAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (ConflictoConcurrenciaException)
         {
             throw new AuctionOperationConflictException(
                 "La publicación cambió durante la eliminación. Actualizá los datos e intentá nuevamente.");
         }
-        catch (DbUpdateException)
+        catch (PersistenciaException)
         {
             throw new AuctionOperationConflictException(
                 "La publicación generó información histórica y ya no puede eliminarse.");
