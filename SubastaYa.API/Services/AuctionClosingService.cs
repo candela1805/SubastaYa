@@ -1,25 +1,18 @@
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using SubastaYa.API.Data;
 using SubastaYa.API.Hubs;
-using SubastaYa.API.Models;
+using SubastaYa.Application.Abstractions.Notifications;
+using SubastaYa.Application.Features.Auctions.Commands;
+using SubastaYa.Domain.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Infrastructure.Repositories;
 
 namespace SubastaYa.API.Services;
 
+// Adaptador de compatibilidad para consumidores existentes. La regla de negocio
+// reside en CloseAuctionCommandHandler y la persistencia en Infrastructure.
 public sealed class AuctionClosingService : IAuctionClosingService
 {
-    private const string SettlementAuditKeyPrefix = "auction:settled:";
-    private const string DesertedAuditKeyPrefix = "auction:deserted:";
-    private const string BuyerPaymentKeyPrefix =
-        "auction:settlement:payment:";
-    private const string SellerCollectionKeyPrefix =
-        "auction:settlement:collection:";
-
-    private readonly ApplicationDbContext _dbContext;
-    private readonly IHubContext<AuctionHub> _hubContext;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger<AuctionClosingService> _logger;
+    private readonly CloseAuctionCommandHandler _handler;
 
     public AuctionClosingService(
         ApplicationDbContext dbContext,
@@ -27,445 +20,48 @@ public sealed class AuctionClosingService : IAuctionClosingService
         TimeProvider timeProvider,
         ILogger<AuctionClosingService> logger)
     {
-        _dbContext = dbContext;
-        _hubContext = hubContext;
-        _timeProvider = timeProvider;
-        _logger = logger;
+        _handler = new CloseAuctionCommandHandler(
+            new AuctionClosingRepository(dbContext),
+            new CompatibilityNotifier(hubContext, logger),
+            timeProvider);
     }
 
     public async Task<AuctionClosingResult> ProcessAsync(
         Guid auctionId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        await using var transaction = await _dbContext.Database
-            .BeginTransactionAsync(cancellationToken);
-
-        AuctionClosingResult result;
-        DateTimeOffset closingTime;
-        DateTimeOffset endDateUtc;
-
-        try
-        {
-            closingTime = _timeProvider.GetUtcNow();
-            var auction = await _dbContext.Subastas
-                .SingleOrDefaultAsync(
-                    item => item.Id == auctionId,
-                    cancellationToken);
-
-            if (auction is null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new AuctionClosingResult(
-                    auctionId,
-                    AuctionClosingOutcome.Skipped);
-            }
-
-            if (auction.Estado != EstadoSubasta.Activa)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new AuctionClosingResult(
-                    auctionId,
-                    AuctionClosingOutcome.AlreadyProcessed);
-            }
-
-            if (auction.FechaFinUtc > closingTime)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return new AuctionClosingResult(
-                    auctionId,
-                    AuctionClosingOutcome.Skipped);
-            }
-
-            if (await _dbContext.LiquidacionesSubasta
-                    .AsNoTracking()
-                    .AnyAsync(
-                        settlement => settlement.SubastaId == auctionId,
-                        cancellationToken))
-            {
-                throw new InvalidOperationException(
-                    $"La subasta {auctionId} sigue activa pero ya posee una liquidación.");
-            }
-
-            var winningBids = await _dbContext.Pujas
-                .Where(bid =>
-                    bid.SubastaId == auctionId &&
-                    bid.EsGanadora)
-                .Take(2)
-                .ToListAsync(cancellationToken);
-
-            if (winningBids.Count > 1)
-            {
-                throw new InvalidOperationException(
-                    $"La subasta {auctionId} tiene más de una puja ganadora.");
-            }
-
-            if (winningBids.Count == 0)
-            {
-                var hasBids = await _dbContext.Pujas
-                    .AsNoTracking()
-                    .AnyAsync(
-                        bid => bid.SubastaId == auctionId,
-                        cancellationToken);
-
-                if (hasBids)
-                {
-                    throw new InvalidOperationException(
-                        $"La subasta {auctionId} tiene pujas pero ninguna ganadora.");
-                }
-
-                auction.Estado = EstadoSubasta.Desierta;
-                _dbContext.AuditoriaLogs.Add(new AuditoriaLog
-                {
-                    Id = Guid.NewGuid(),
-                    SubastaId = auctionId,
-                    TipoEvento = "AuctionDeserted",
-                    Detalle =
-                        "Estado anterior: Activa; estado nuevo: Desierta; motivo: vencimiento sin ofertas; origen: AuctionStateWorker.",
-                    ClaveIdempotencia =
-                        $"{DesertedAuditKeyPrefix}{auctionId}",
-                    FechaUtc = closingTime
-                });
-
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-
-                var desertedResult = new AuctionClosingResult(
-                    auctionId,
-                    AuctionClosingOutcome.Deserted);
-
-                await NotifyStateChangedAsync(
-                    auctionId,
-                    EstadoSubasta.Desierta,
-                    auction.FechaFinUtc);
-
-                return desertedResult;
-            }
-
-            var winningBid = winningBids[0];
-            endDateUtc = auction.FechaFinUtc;
-            var bidAmounts = await _dbContext.Pujas
-                .AsNoTracking()
-                .Where(bid => bid.SubastaId == auctionId)
-                .Select(bid => bid.Monto)
-                .ToListAsync(cancellationToken);
-            var highestBidAmount = bidAmounts.Max();
-
-            if (winningBid.Monto != highestBidAmount ||
-                winningBid.Monto != auction.PrecioActual ||
-                winningBid.Monto <= 0)
-            {
-                throw new InvalidOperationException(
-                    $"La puja ganadora de la subasta {auctionId} no coincide con su precio final.");
-            }
-
-            if (!auction.VendedorId.HasValue)
-            {
-                throw new InvalidOperationException(
-                    $"La subasta {auctionId} no tiene vendedor asignado.");
-            }
-
-            var sellerId = auction.VendedorId.Value;
-
-            if (sellerId == winningBid.UsuarioId)
-            {
-                throw new InvalidOperationException(
-                    $"El vendedor de la subasta {auctionId} no puede ser su comprador.");
-            }
-
-            var buyerWallet = await _dbContext.Billeteras
-                .SingleOrDefaultAsync(
-                    wallet => wallet.UsuarioId == winningBid.UsuarioId,
-                    cancellationToken);
-            var sellerWallet = await _dbContext.Billeteras
-                .SingleOrDefaultAsync(
-                    wallet => wallet.UsuarioId == sellerId,
-                    cancellationToken);
-
-            if (buyerWallet is null)
-            {
-                throw new InvalidOperationException(
-                    $"El comprador de la subasta {auctionId} no tiene billetera.");
-            }
-
-            if (sellerWallet is null)
-            {
-                throw new InvalidOperationException(
-                    $"El vendedor de la subasta {auctionId} no tiene billetera.");
-            }
-
-            var amount = winningBid.Monto;
-
-            if (buyerWallet.SaldoRetenido < amount ||
-                buyerWallet.SaldoTotal < amount)
-            {
-                throw new InvalidOperationException(
-                    $"La retención del comprador para la subasta {auctionId} es insuficiente.");
-            }
-
-            if (sellerWallet.SaldoTotal >
-                    WalletService.MaxMoneyAmount - amount ||
-                sellerWallet.SaldoDisponible >
-                    WalletService.MaxMoneyAmount - amount)
-            {
-                throw new InvalidOperationException(
-                    $"El crédito de la subasta {auctionId} supera el límite monetario del vendedor.");
-            }
-
-            var settlement = new LiquidacionSubasta
-            {
-                Id = Guid.NewGuid(),
-                SubastaId = auction.Id,
-                PujaGanadoraId = winningBid.Id,
-                CompradorId = winningBid.UsuarioId,
-                VendedorId = sellerId,
-                ImporteFinal = amount,
-                FechaAdjudicacionUtc = closingTime,
-                FechaLiquidacionUtc = closingTime
-            };
-
-            buyerWallet.SaldoTotal -= amount;
-            buyerWallet.SaldoRetenido -= amount;
-            sellerWallet.SaldoTotal += amount;
-            sellerWallet.SaldoDisponible += amount;
-            auction.Estado = EstadoSubasta.Finalizada;
-
-            _dbContext.LiquidacionesSubasta.Add(settlement);
-            _dbContext.TransaccionLedgers.AddRange(
-                new TransaccionLedger
-                {
-                    Id = Guid.NewGuid(),
-                    BilleteraId = buyerWallet.Id,
-                    LiquidacionSubastaId = settlement.Id,
-                    ClaveIdempotencia =
-                        $"{BuyerPaymentKeyPrefix}{auctionId}",
-                    Tipo = TipoMovimientoBilletera.Pago,
-                    Monto = amount,
-                    Descripcion =
-                        $"Pago de la liquidación {settlement.Id} por la subasta {auctionId}.",
-                    FechaUtc = closingTime
-                },
-                new TransaccionLedger
-                {
-                    Id = Guid.NewGuid(),
-                    BilleteraId = sellerWallet.Id,
-                    LiquidacionSubastaId = settlement.Id,
-                    ClaveIdempotencia =
-                        $"{SellerCollectionKeyPrefix}{auctionId}",
-                    Tipo = TipoMovimientoBilletera.Cobro,
-                    Monto = amount,
-                    Descripcion =
-                        $"Cobro de la liquidación {settlement.Id} por la subasta {auctionId}.",
-                    FechaUtc = closingTime
-                });
-            _dbContext.AuditoriaLogs.Add(new AuditoriaLog
-            {
-                Id = Guid.NewGuid(),
-                SubastaId = auctionId,
-                TipoEvento = "AuctionSettled",
-                Detalle =
-                    $"Subasta adjudicada y liquidada. Liquidación: {settlement.Id}; puja: {winningBid.Id}; comprador: {winningBid.UsuarioId}; vendedor: {sellerId}; importe: {amount:F2}; origen: AuctionStateWorker.",
-                ClaveIdempotencia =
-                    $"{SettlementAuditKeyPrefix}{auctionId}",
-                FechaUtc = closingTime
-            });
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            result = new AuctionClosingResult(
-                auctionId,
-                AuctionClosingOutcome.Finalized,
-                settlement.Id);
-        }
-        catch (DbUpdateConcurrencyException exception)
-        {
-            await RollbackSafelyAsync(transaction);
-
-            _logger.LogWarning(
-                exception,
-                "La subasta {AuctionId} cambió durante su cierre; se volverá a evaluar en otro ciclo.",
-                auctionId);
-
-            return new AuctionClosingResult(
-                auctionId,
-                AuctionClosingOutcome.ConcurrencyConflict);
-        }
-        catch (DbUpdateException exception)
-        when (IsIdempotencyConflict(exception))
-        {
-            await RollbackSafelyAsync(transaction);
-            await transaction.DisposeAsync();
-            _dbContext.ChangeTracker.Clear();
-
-            if (!await IsAlreadyProcessedAsync(
-                    auctionId,
-                    CancellationToken.None))
-            {
-                throw;
-            }
-
-            _logger.LogInformation(
-                exception,
-                "La subasta {AuctionId} ya fue procesada por otra instancia; no se repite la liquidación.",
-                auctionId);
-
-            return new AuctionClosingResult(
-                auctionId,
-                AuctionClosingOutcome.AlreadyProcessed);
-        }
-        catch
-        {
-            await RollbackSafelyAsync(transaction);
-            throw;
-        }
-
-        await NotifyStateChangedAsync(
-            auctionId,
-            EstadoSubasta.Finalizada,
-            endDateUtc);
-
-        return result;
+        var result = await _handler.HandleAsync(
+            new CloseAuctionCommand(auctionId), cancellationToken);
+        return new AuctionClosingResult(
+            result.AuctionId,
+            Enum.Parse<AuctionClosingOutcome>(result.Outcome.ToString()),
+            result.SettlementId);
     }
 
-    private static async Task RollbackSafelyAsync(
-        IDbContextTransaction transaction)
+    private sealed class CompatibilityNotifier : IAuctionNotifier
     {
-        try
+        private readonly IHubContext<AuctionHub> _hubContext;
+        private readonly ILogger _logger;
+        public CompatibilityNotifier(IHubContext<AuctionHub> hubContext, ILogger logger)
+        { _hubContext = hubContext; _logger = logger; }
+
+        public async Task NotifyStateChangedAsync(
+            Guid auctionId,
+            EstadoSubasta state,
+            DateTimeOffset endDateUtc,
+            CancellationToken cancellationToken = default)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
-        }
-        catch
-        {
-            // Se preserva la excepción original; DisposeAsync completa la limpieza.
-        }
-    }
-
-    private static bool IsIdempotencyConflict(
-        DbUpdateException exception)
-    {
-        var error = exception.ToString();
-
-        return error.Contains(
-                "UX_LiquidacionesSubasta_SubastaId",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "UX_LiquidacionesSubasta_PujaGanadoraId",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "UX_TransaccionesLedger_LiquidacionSubastaId_Tipo",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "UX_TransaccionesLedger_ClaveIdempotencia",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "UX_AuditoriaLogs_ClaveIdempotencia",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "LiquidacionesSubasta.SubastaId",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "LiquidacionesSubasta.PujaGanadoraId",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "TransaccionesLedger.ClaveIdempotencia",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "TransaccionesLedger.LiquidacionSubastaId, TransaccionesLedger.Tipo",
-                StringComparison.OrdinalIgnoreCase) ||
-            error.Contains(
-                "AuditoriaLogs.ClaveIdempotencia",
-                StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task<bool> IsAlreadyProcessedAsync(
-        Guid auctionId,
-        CancellationToken cancellationToken)
-    {
-        var state = await _dbContext.Subastas
-            .AsNoTracking()
-            .Where(auction => auction.Id == auctionId)
-            .Select(auction => (EstadoSubasta?)auction.Estado)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (state == EstadoSubasta.Desierta)
-        {
-            var hasDesertedAudit = await _dbContext.AuditoriaLogs
-                .AsNoTracking()
-                .AnyAsync(
-                    audit => audit.ClaveIdempotencia ==
-                        $"{DesertedAuditKeyPrefix}{auctionId}",
-                    cancellationToken);
-            var hasSettlement = await _dbContext.LiquidacionesSubasta
-                .AsNoTracking()
-                .AnyAsync(
-                    settlement => settlement.SubastaId == auctionId,
-                    cancellationToken);
-
-            return hasDesertedAudit && !hasSettlement;
-        }
-
-        if (state != EstadoSubasta.Finalizada)
-        {
-            return false;
-        }
-
-        var settlementId = await _dbContext.LiquidacionesSubasta
-            .AsNoTracking()
-            .Where(settlement => settlement.SubastaId == auctionId)
-            .Select(settlement => (Guid?)settlement.Id)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (!settlementId.HasValue)
-        {
-            return false;
-        }
-
-        var movements = await _dbContext.TransaccionLedgers
-            .AsNoTracking()
-            .Where(movement =>
-                movement.LiquidacionSubastaId == settlementId.Value)
-            .Select(movement => movement.Tipo)
-            .ToListAsync(cancellationToken);
-        var hasSettlementAudit = await _dbContext.AuditoriaLogs
-            .AsNoTracking()
-            .AnyAsync(
-                audit => audit.ClaveIdempotencia ==
-                    $"{SettlementAuditKeyPrefix}{auctionId}",
-                cancellationToken);
-
-        return movements.Count == 2 &&
-            movements.Contains(TipoMovimientoBilletera.Pago) &&
-            movements.Contains(TipoMovimientoBilletera.Cobro) &&
-            hasSettlementAudit;
-    }
-
-    private async Task NotifyStateChangedAsync(
-        Guid auctionId,
-        EstadoSubasta state,
-        DateTimeOffset endDateUtc)
-    {
-        try
-        {
-            await _hubContext.Clients
-                .Group($"auction-{auctionId}")
-                .SendAsync(
+            try
+            {
+                await _hubContext.Clients.Group($"auction-{auctionId}").SendAsync(
                     "AuctionStateChanged",
-                    new
-                    {
-                        SubastaId = auctionId,
-                        Estado = state.ToString(),
-                        FechaFinUtc = endDateUtc
-                    },
+                    new { SubastaId = auctionId, Estado = state.ToString(), FechaFinUtc = endDateUtc },
                     CancellationToken.None);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogError(
-                exception,
-                "La subasta {AuctionId} fue liquidada, pero no pudo notificarse por SignalR.",
-                auctionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "La subasta {AuctionId} fue procesada, pero no pudo notificarse por SignalR.", auctionId);
+            }
         }
     }
 }

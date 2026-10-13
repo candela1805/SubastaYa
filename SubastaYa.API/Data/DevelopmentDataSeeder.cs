@@ -1,6 +1,7 @@
+using SubastaYa.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 
 namespace SubastaYa.API.Data;
 
@@ -66,10 +67,10 @@ public sealed class DevelopmentDataSeeder
 
         AddAuctionIfMissing(
             CriticalAuctionId, seller.Id, "Notebook para anti-sniping",
-            "Tecnología", 70_000m, 5_000m, now.AddHours(-1),
+            "TecnologÃ­a", 70_000m, 5_000m, now.AddHours(-1),
             now.AddSeconds(90), EstadoSubasta.Activa);
         AddAuctionIfMissing(
-            ScheduledAuctionId, seller.Id, "Colección de monedas",
+            ScheduledAuctionId, seller.Id, "ColecciÃ³n de monedas",
             "Coleccionables", 20_000m, 2_000m, now.AddHours(24),
             now.AddHours(26), EstadoSubasta.Programada);
 
@@ -144,7 +145,7 @@ public sealed class DevelopmentDataSeeder
             $"seed:deposit:{user.Id}",
             TipoMovimientoBilletera.Deposito,
             total,
-            "Depósito inicial de datos de demostración.",
+            "DepÃ³sito inicial de datos de demostraciÃ³n.",
             now.AddMinutes(-10)));
     }
 
@@ -170,7 +171,7 @@ public sealed class DevelopmentDataSeeder
             depositKey,
             TipoMovimientoBilletera.Deposito,
             10_000m,
-            "Depósito inicial para liquidación seed.",
+            "DepÃ³sito inicial para liquidaciÃ³n seed.",
             now.AddMinutes(-10)));
     }
 
@@ -183,8 +184,8 @@ public sealed class DevelopmentDataSeeder
         var firstBidId = Guid.Parse("70000000-0000-0000-0000-000000000001");
         var winningBidId = Guid.Parse("70000000-0000-0000-0000-000000000002");
         _db.Subastas.Add(Auction(
-            StandardAuctionId, seller.Id, "Smartphone de demostración",
-            "Tecnología", 35_000m, 45_000m, 5_000m,
+            StandardAuctionId, seller.Id, "Smartphone de demostraciÃ³n",
+            "TecnologÃ­a", 35_000m, 45_000m, 5_000m,
             now.AddHours(-1), now.AddMinutes(25), EstadoSubasta.Activa));
         _db.Pujas.AddRange(
             Bid(firstBidId, StandardAuctionId, buyerTwo.Id, 40_000m, false, now.AddMinutes(-20)),
@@ -192,13 +193,13 @@ public sealed class DevelopmentDataSeeder
         _db.TransaccionLedgers.AddRange(
             Ledger(buyerTwo.Billetera!.Id, "seed:standard:buyer2:hold",
                 TipoMovimientoBilletera.Retencion, 40_000m,
-                "Retención por primera puja seed.", now.AddMinutes(-20)),
+                "RetenciÃ³n por primera puja seed.", now.AddMinutes(-20)),
             Ledger(buyerTwo.Billetera.Id, "seed:standard:buyer2:release",
                 TipoMovimientoBilletera.Liberacion, 40_000m,
-                "Liberación al ser superada la primera puja seed.", now.AddMinutes(-15)),
+                "LiberaciÃ³n al ser superada la primera puja seed.", now.AddMinutes(-15)),
             Ledger(buyerOne.Billetera!.Id, "seed:standard:buyer1:hold",
                 TipoMovimientoBilletera.Retencion, 45_000m,
-                "Retención por puja líder seed.", now.AddMinutes(-15)));
+                "RetenciÃ³n por puja lÃ­der seed.", now.AddMinutes(-15)));
         AddBidAudit(StandardAuctionId, firstBidId, buyerTwo.Id, 40_000m, now.AddMinutes(-20));
         AddBidAudit(StandardAuctionId, winningBidId, buyerOne.Id, 45_000m, now.AddMinutes(-15));
     }
@@ -211,7 +212,7 @@ public sealed class DevelopmentDataSeeder
         var bidId = Guid.Parse("70000000-0000-0000-0000-000000000003");
         _db.Subastas.Add(Auction(
             ExpiredWinnerAuctionId, seller.Id, "Motocicleta para liquidar",
-            "Vehículos", 8_000m, 10_000m, 2_000m,
+            "VehÃ­culos", 8_000m, 10_000m, 2_000m,
             now.AddHours(-3), now.AddMinutes(-2), EstadoSubasta.Activa));
         _db.Pujas.Add(Bid(
             bidId, ExpiredWinnerAuctionId, demo.Id, 10_000m, true,
@@ -219,7 +220,7 @@ public sealed class DevelopmentDataSeeder
         _db.TransaccionLedgers.Add(Ledger(
             demo.Billetera!.Id, "seed:expired:demo:hold",
             TipoMovimientoBilletera.Retencion, 10_000m,
-            "Retención para la subasta vencida seed.", now.AddMinutes(-10)));
+            "RetenciÃ³n para la subasta vencida seed.", now.AddMinutes(-10)));
         AddBidAudit(
             ExpiredWinnerAuctionId, bidId, demo.Id, 10_000m,
             now.AddMinutes(-10));
@@ -273,7 +274,7 @@ public sealed class DevelopmentDataSeeder
         Id = id,
         VendedorId = sellerId,
         Titulo = title,
-        Descripcion = "Escenario académico generado automáticamente en Development.",
+        Descripcion = "Escenario acadÃ©mico generado automÃ¡ticamente en Development.",
         Categoria = category,
         PrecioInicial = initialPrice,
         PrecioActual = currentPrice,

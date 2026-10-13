@@ -2,6 +2,18 @@
 using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Bids;
 using SubastaYa.API.Services;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
+using SubastaYa.Application.Features.Bids.DTOs;
+using SubastaYa.Application.Features.Bids.Queries.GetBidHistory;
+using SubastaYa.Application.Features.Bids.Queries.GetRoomState;
+using BidNotFoundException = SubastaYa.Application.Exceptions.BidNotFoundException;
+using BidStateConflictException = SubastaYa.Application.Exceptions.BidStateConflictException;
+using BidForbiddenException = SubastaYa.Application.Exceptions.BidForbiddenException;
+using BidConcurrencyException = SubastaYa.Application.Exceptions.BidConcurrencyException;
+using BidInsufficientFundsException = SubastaYa.Application.Exceptions.BidInsufficientFundsException;
+using BidValidationException = SubastaYa.Application.Exceptions.BidValidationException;
+using BidRuleException = SubastaYa.Application.Exceptions.BidRuleException;
 
 namespace SubastaYa.API.Controllers;
 
@@ -9,15 +21,21 @@ namespace SubastaYa.API.Controllers;
 [Route("api/auctions/{subastaId:guid}/bids")]
 public class BidsController : ControllerBase
 {
-    private readonly IBidService _bidService;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ICommandHandler<PlaceBidCommand, PlaceBidResult> _placeBidHandler;
+    private readonly IQueryHandler<GetBidHistoryQuery, IReadOnlyList<BidHistoryResult>> _getBidHistoryHandler;
+    private readonly IQueryHandler<GetRoomStateQuery, BidRoomStateResult> _getRoomStateHandler;
 
     public BidsController(
-        IBidService bidService,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ICommandHandler<PlaceBidCommand, PlaceBidResult> placeBidHandler,
+        IQueryHandler<GetBidHistoryQuery, IReadOnlyList<BidHistoryResult>> getBidHistoryHandler,
+        IQueryHandler<GetRoomStateQuery, BidRoomStateResult> getRoomStateHandler)
     {
-        _bidService = bidService;
         _currentUserService = currentUserService;
+        _placeBidHandler = placeBidHandler;
+        _getBidHistoryHandler = getBidHistoryHandler;
+        _getRoomStateHandler = getRoomStateHandler;
     }
 
     [HttpGet]
@@ -27,11 +45,19 @@ public class BidsController : ControllerBase
     {
         try
         {
-            var bids = await _bidService.GetBidHistoryAsync(
-                subastaId,
+            var query = new GetBidHistoryQuery(subastaId);
+
+            var bids = await _getBidHistoryHandler.HandleAsync(
+                query,
                 cancellationToken);
 
-            return Ok(bids);
+            return Ok(bids.Select(bid => new BidHistoryResponse
+            {
+                Id = bid.Id,
+                Monto = bid.Monto,
+                Pseudonimo = bid.Pseudonimo,
+                FechaUtc = bid.FechaUtc
+            }).ToList());
         }
         catch (KeyNotFoundException ex)
         {
@@ -42,8 +68,8 @@ public class BidsController : ControllerBase
     [HttpGet("state")]
     [Authorize]
     public async Task<ActionResult<BidRoomStateResponse>> GetRoomState(
-        Guid subastaId,
-        CancellationToken cancellationToken)
+    Guid subastaId,
+    CancellationToken cancellationToken)
     {
         if (!_currentUserService.TryGetUserId(out var userId))
         {
@@ -56,10 +82,22 @@ public class BidsController : ControllerBase
 
         try
         {
-            var state = await _bidService.GetRoomStateAsync(
-                subastaId,
-                userId,
+            var query = new GetRoomStateQuery(subastaId, userId);
+
+            var result = await _getRoomStateHandler.HandleAsync(
+                query,
                 cancellationToken);
+
+            var state = new BidRoomStateResponse
+            {
+                SubastaId = result.SubastaId,
+                PrecioActual = result.PrecioActual,
+                IncrementoMinimo = result.IncrementoMinimo,
+                PujaMinimaSiguiente = result.PujaMinimaSiguiente,
+                FechaFinUtc = result.FechaFinUtc,
+                EstadoSubasta = result.EstadoSubasta,
+                EstadoPostor = result.EstadoPostor
+            };
 
             return Ok(state);
         }
@@ -91,12 +129,29 @@ public class BidsController : ControllerBase
 
         try
         {
-            var result = await _bidService.PlaceBidAsync(
-                subastaId,
-                userId,
-                request,
+            var command = new PlaceBidCommand(
+            subastaId,
+            userId,
+            request.Monto);
+
+            var result = await _placeBidHandler.HandleAsync(
+                command,
                 cancellationToken);
-            return Ok(result);
+
+            return Ok(new BidResponse
+            {
+                Id = result.Id,
+                SubastaId = result.SubastaId,
+                Monto = result.Monto,
+                Pseudonimo = result.Pseudonimo,
+                FechaUtc = result.FechaUtc,
+                PrecioActual = result.PrecioActual,
+                FechaFinUtc = result.FechaFinUtc,
+                SubastaExtendida = result.SubastaExtendida,
+                Estado = result.Estado,
+                IncrementoMinimo = result.IncrementoMinimo,
+                PujaMinimaSiguiente = result.PujaMinimaSiguiente
+            });
         }
         catch (BidNotFoundException ex)
         {
