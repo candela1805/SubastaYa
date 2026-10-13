@@ -15,19 +15,22 @@ public sealed class AuctionService : IAuctionService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AuctionService> _logger;
     private readonly ICatalogoRepository _catalogoRepository;
+    private readonly ISubastaRepository _subastaRepository;
 
     public AuctionService(
     ApplicationDbContext dbContext,
     IHubContext<AuctionHub> hubContext,
     TimeProvider timeProvider,
     ILogger<AuctionService> logger,
-    ICatalogoRepository catalogoRepository)
+    ICatalogoRepository catalogoRepository,
+    ISubastaRepository subastaRepository)
     {
         _dbContext = dbContext;
         _hubContext = hubContext;
         _timeProvider = timeProvider;
         _logger = logger;
         _catalogoRepository = catalogoRepository;
+        _subastaRepository = subastaRepository;
     }
 
     public Task<PagedAuctionResponse> ObtenerSubastasAsync(
@@ -84,36 +87,23 @@ public sealed class AuctionService : IAuctionService
                 : EstadoSubasta.Activa
         };
 
-        _dbContext.Subastas.Add(subasta);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _subastaRepository.Agregar(subasta);
+        await _subastaRepository.GuardarCambiosAsync(cancellationToken);
 
         return MapearRespuesta(subasta);
     }
 
     public async Task<IReadOnlyList<AuctionResponse>> ObtenerPublicacionesAsync(
-        Guid vendedorId,
-        CancellationToken cancellationToken = default)
+    Guid vendedorId,
+    CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Subastas
-            .AsNoTracking()
-            .Where(subasta => subasta.VendedorId == vendedorId)
-            .OrderByDescending(subasta => subasta.FechaInicioUtc)
-            .ThenByDescending(subasta => subasta.Id)
-            .Select(subasta => new AuctionResponse
-            {
-                Id = subasta.Id,
-                Titulo = subasta.Titulo,
-                Descripcion = subasta.Descripcion ?? string.Empty,
-                ImagenUrl = subasta.ImagenUrl,
-                Categoria = subasta.Categoria,
-                PrecioInicial = subasta.PrecioInicial,
-                PrecioActual = subasta.PrecioActual,
-                IncrementoMinimo = subasta.IncrementoMinimo,
-                FechaInicioUtc = subasta.FechaInicioUtc,
-                FechaFinUtc = subasta.FechaFinUtc,
-                Estado = subasta.Estado
-            })
-            .ToListAsync(cancellationToken);
+        var subastas = await _subastaRepository.ObtenerPorVendedorAsync(
+            vendedorId,
+            cancellationToken);
+
+        return subastas
+            .Select(MapearRespuesta)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<BidActivityResponse>>

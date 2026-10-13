@@ -65,6 +65,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ICatalogoRepository, CatalogoRepository>();
+builder.Services.AddScoped<ISubastaRepository, SubastaRepository>();
 builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<IAuctionClosingService, AuctionClosingService>();

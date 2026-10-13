@@ -159,6 +159,7 @@ public sealed class AuctionStateCycleProcessorTests
             NoOpHubContext.Instance);
         services.AddLogging();
         services.AddScoped<ICatalogoRepository, CatalogoRepository>();
+        services.AddScoped<ISubastaRepository, SubastaRepository>();
         services.AddScoped<IAuctionService, AuctionService>();
         services.AddScoped<IAuctionClosingService, ProbeClosingService>();
 
