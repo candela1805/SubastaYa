@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models;
+namespace SubastaYa.Dominio.Models;
 
 public sealed class LiquidacionSubasta
 {

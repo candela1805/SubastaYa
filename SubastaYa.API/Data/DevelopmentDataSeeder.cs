@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 
 namespace SubastaYa.API.Data;
 

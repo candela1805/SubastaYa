@@ -1,7 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SubastaYa.API.Models;
+namespace SubastaYa.Dominio.Models;
 
 public class Puja
 {

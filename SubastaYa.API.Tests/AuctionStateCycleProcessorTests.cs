@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SubastaYa.API.Data;
 using SubastaYa.API.Hubs;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 using SubastaYa.API.Workers;

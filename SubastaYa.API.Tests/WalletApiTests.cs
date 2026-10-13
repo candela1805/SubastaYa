@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SubastaYa.API.Contracts.Wallet;
 using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 using SubastaYa.API.Tests.TestInfrastructure;
 
 namespace SubastaYa.API.Tests;

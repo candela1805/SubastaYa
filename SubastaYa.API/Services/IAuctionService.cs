@@ -1,5 +1,5 @@
 using SubastaYa.API.Contracts.Auctions;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 
 namespace SubastaYa.API.Services;
 

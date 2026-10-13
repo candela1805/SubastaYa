@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using SubastaYa.API.Contracts.Auctions;
 using SubastaYa.API.Data;
 using SubastaYa.API.Hubs;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 
 namespace SubastaYa.API.Services;
 

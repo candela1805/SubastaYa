@@ -1,7 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Wallet;
 using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 
 namespace SubastaYa.API.Services;
 

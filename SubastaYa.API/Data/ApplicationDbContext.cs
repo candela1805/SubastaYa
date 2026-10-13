@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 
 namespace SubastaYa.API.Data;
 

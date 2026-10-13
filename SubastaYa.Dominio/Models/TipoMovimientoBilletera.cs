@@ -1,4 +1,4 @@
-﻿namespace SubastaYa.API.Models;
+namespace SubastaYa.Dominio.Models;
 
 public enum TipoMovimientoBilletera
 {

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 using SubastaYa.API.Workers;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;

@@ -1,6 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
-namespace SubastaYa.API.Models;
+namespace SubastaYa.Dominio.Models;
 
 public class AuditoriaLog
 {

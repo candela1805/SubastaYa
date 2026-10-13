@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;

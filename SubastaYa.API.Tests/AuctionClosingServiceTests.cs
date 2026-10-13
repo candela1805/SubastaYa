@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Models;
+using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 
