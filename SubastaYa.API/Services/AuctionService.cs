@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
-using SubastaYa.API.Contracts.Auctions;
+using SubastaYa.Aplicacion.Contracts.Auctions;
 using SubastaYa.Infraestructura.Data;
 using SubastaYa.API.Hubs;
 using SubastaYa.Dominio.Models;

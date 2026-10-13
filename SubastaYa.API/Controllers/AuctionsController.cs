@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using SubastaYa.API.Contracts.Auctions;
+using SubastaYa.Aplicacion.Contracts.Auctions;
 using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;
 

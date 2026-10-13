@@ -1,4 +1,4 @@
-namespace SubastaYa.API.Contracts.Auctions;
+namespace SubastaYa.Aplicacion.Contracts.Auctions;
 
 public sealed class PagedAuctionResponse
 {

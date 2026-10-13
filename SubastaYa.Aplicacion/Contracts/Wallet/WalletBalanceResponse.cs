@@ -1,4 +1,4 @@
-﻿namespace SubastaYa.API.Contracts.Wallet;
+namespace SubastaYa.Aplicacion.Contracts.Wallet;
 
 public sealed class WalletBalanceResponse
 {

@@ -1,4 +1,4 @@
-﻿namespace SubastaYa.API.Contracts.Auth;
+namespace SubastaYa.Aplicacion.Contracts.Auth;
 
 public sealed class AuthResponse
 {

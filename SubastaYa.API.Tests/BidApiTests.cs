@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using SubastaYa.API.Contracts.Bids;
+using SubastaYa.Aplicacion.Contracts.Bids;
 using SubastaYa.API.Tests.TestInfrastructure;
 
 namespace SubastaYa.API.Tests;

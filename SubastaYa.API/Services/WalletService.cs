@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Contracts.Wallet;
+using SubastaYa.Aplicacion.Contracts.Wallet;
 using SubastaYa.Infraestructura.Data;
 using SubastaYa.Dominio.Models;
 

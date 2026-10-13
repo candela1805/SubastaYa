@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using SubastaYa.API.Contracts.Wallet;
+using SubastaYa.Aplicacion.Contracts.Wallet;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Controllers;

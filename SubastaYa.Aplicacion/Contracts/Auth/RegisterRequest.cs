@@ -1,6 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
-namespace SubastaYa.API.Contracts.Auth;
+namespace SubastaYa.Aplicacion.Contracts.Auth;
 
 public sealed class RegisterRequest
 {

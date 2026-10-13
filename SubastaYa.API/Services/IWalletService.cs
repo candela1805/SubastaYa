@@ -1,4 +1,4 @@
-﻿using SubastaYa.API.Contracts.Wallet;
+using SubastaYa.Aplicacion.Contracts.Wallet;
 
 namespace SubastaYa.API.Services;
 

@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace SubastaYa.API.Contracts.Auctions;
+namespace SubastaYa.Aplicacion.Contracts.Auctions;
 
-public sealed class CreateAuctionRequest
+public sealed class UpdateAuctionRequest
 {
     [Required]
     [MaxLength(150)]
@@ -18,12 +18,6 @@ public sealed class CreateAuctionRequest
     [Required]
     [MaxLength(100)]
     public string Categoria { get; set; } = string.Empty;
-
-    public decimal PrecioInicial { get; set; }
-
-    public decimal IncrementoMinimo { get; set; }
-
-    public DateTimeOffset FechaInicioUtc { get; set; }
 
     public DateTimeOffset FechaFinUtc { get; set; }
 }

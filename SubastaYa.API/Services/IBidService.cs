@@ -1,4 +1,4 @@
-﻿using SubastaYa.API.Contracts.Bids;
+using SubastaYa.Aplicacion.Contracts.Bids;
 
 namespace SubastaYa.API.Services;
 

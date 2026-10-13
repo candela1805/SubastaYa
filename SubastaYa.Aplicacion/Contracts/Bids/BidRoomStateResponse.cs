@@ -1,6 +1,6 @@
 using SubastaYa.Dominio.Models;
 
-namespace SubastaYa.API.Contracts.Bids;
+namespace SubastaYa.Aplicacion.Contracts.Bids;
 
 public sealed class BidRoomStateResponse
 {

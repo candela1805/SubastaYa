@@ -1,4 +1,4 @@
-namespace SubastaYa.API.Contracts.Users;
+namespace SubastaYa.Aplicacion.Contracts.Users;
 
 public sealed class UserProfileResponse
 {

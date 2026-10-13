@@ -1,4 +1,4 @@
-﻿namespace SubastaYa.API.Contracts.Bids;
+namespace SubastaYa.Aplicacion.Contracts.Bids;
 public class BidHistoryResponse
 {
     public Guid Id { get; set; }
