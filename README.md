@@ -30,23 +30,96 @@ CDN.
 
 ```text
 SubastaYa/
-├── SubastaYa.API/          # API, servicios, EF Core, Hub y Worker
-├── SubastaYa.API.Tests/    # Tests unitarios y de integración
-├── SubastaYa.Web/          # Frontend estático y tests JavaScript
+├── SubastaYa.Domain/         # Entidades, enumeraciones y modelos del dominio
+├── SubastaYa.Application/    # Commands, Queries, handlers, DTOs, reglas y contratos
+├── SubastaYa.Infrastructure/ # EF Core, DbContext, repositorios, auditoría y migraciones
+├── SubastaYa.API/            # Controllers, configuración, SignalR, adaptadores y workers
+├── SubastaYa.API.Tests/      # Tests unitarios, de integración y concurrencia
+├── SubastaYa.Web/            # Frontend estático y tests JavaScript
 ├── tests/
 │   └── stress-concurrency.ps1
 ├── SubastaYa.sln
 └── README.md
 ```
 
-```text
-Frontend ── REST / SignalR ──> Controllers ──> Services
-                                               │
-                                               ▼
-                                  ApplicationDbContext / SQL Server
+```mermaid
+flowchart TB
+    subgraph dependencies[Dependencias entre proyectos]
+        API_DEP[SubastaYa.API] -. referencia .-> APP_DEP[SubastaYa.Application]
+        API_DEP -. referencia .-> INFRA_DEP[SubastaYa.Infrastructure]
+        INFRA_DEP -. referencia .-> APP_DEP
+        APP_DEP -. referencia .-> DOMAIN_DEP[SubastaYa.Domain]
+    end
+
+    subgraph execution[Flujo de ejecución]
+        WEB[SubastaYa.Web] -->|REST / SignalR| API[Controllers / Workers]
+        API -->|Commands / Queries| APP[Handlers de Application]
+        APP -->|interfaces| PORTS[Contratos de persistencia y notificación]
+        INFRA[Repositorios de Infrastructure] -->|implementan| PORTS
+        INFRA --> EF[ApplicationDbContext / EF Core]
+        EF --> SQL[(SQL Server)]
+        API -->|adaptadores| HUB[SignalR AuctionHub]
+    end
 ```
 
-No existe una capa Repository ni se aplica Clean Architecture estricta.
+`SubastaYa.Domain` no referencia otros proyectos. `SubastaYa.Application`
+depende del dominio y contiene los casos de uso. Los contratos de persistencia y
+notificación se definen en Application; Infrastructure los implementa mediante
+EF Core. API actúa como punto de composición y adapta HTTP, SignalR y procesos
+en segundo plano a esos casos de uso.
+
+La solución adopta separación por capas y principios de inversión de
+dependencias, pero no se presenta como Clean Architecture estricta: autenticación,
+perfil de usuario y preparación de datos de Development todavía conservan
+integración directa con EF Core desde API.
+
+### CQRS custom — C01
+
+Los flujos principales separan operaciones de escritura (**Commands**) y de
+lectura (**Queries**) sin utilizar MediatR. Cada operación se ejecuta mediante
+`ICommandHandler<TCommand, TResult>` o `IQueryHandler<TQuery, TResult>`, y utiliza
+DTOs propios de Application para devolver resultados sin depender de los
+contratos HTTP.
+
+Ejemplos reales son `PlaceBidCommandHandler`, `CloseAuctionCommandHandler` y
+`DepositWalletCommandHandler` para escrituras, junto con
+`GetBidHistoryQueryHandler`, `GetRoomStateQueryHandler` y los handlers de consulta
+de subastas y billetera. Los controllers validan y mapean el contrato HTTP, y
+delegan la ejecución al handler correspondiente.
+
+### Repositorios y persistencia
+
+Interfaces como `IPlaceBidRepository`, `IBidReadRepository`,
+`IAuctionRepository`, `IAuctionClosingRepository` e `IWalletRepository` están en
+Application. Sus implementaciones concretas se encuentran en Infrastructure,
+donde también residen `ApplicationDbContext` y las migraciones de EF Core para
+SQL Server.
+
+No existe una interfaz `IUnitOfWork`. Las operaciones financieras que requieren
+atomicidad coordinan explícitamente transacciones de EF Core desde los
+repositorios: saldo, ledger, liquidación y auditoría se confirman o revierten como
+una unidad. Los tokens de concurrencia y las restricciones únicas de base de
+datos completan la protección ante ejecuciones simultáneas e idempotencia.
+
+### Auditoría de negocio — B08
+
+La auditoría de negocio (`AuditoriaLog`) es independiente del ledger financiero
+(`TransaccionLedger`). El ledger representa movimientos de dinero o retenciones;
+la auditoría explica qué evento de negocio ocurrió, sobre qué usuario, billetera
+o subasta y en qué momento.
+
+Se registran, entre otros, los eventos `BidPlaced`, `BidRejected`,
+`BidConcurrencyConflict`, `AuctionExtended`, `AuctionUpdated`,
+`AuctionStateChanged`, `AuctionDeserted`, `AuctionSettled` y `WalletDeposit`.
+Los rechazos y conflictos de puja se persisten mediante `IBidAuditWriter` incluso
+cuando la transacción principal debió revertirse; los eventos exitosos se guardan
+en la misma transacción que el cambio de negocio.
+
+Los registros son append-only. `ApplicationDbContext` rechaza estados Modified o
+Deleted para auditorías, las relaciones relevantes usan borrado restrictivo y
+los triggers SQL Server `TR_AuditoriaLogs_PreventUpdate` y
+`TR_AuditoriaLogs_PreventDelete` impiden cambios o eliminaciones directas en la
+base de datos.
 
 ## Requisitos
 
@@ -91,7 +164,7 @@ dotnet build SubastaYa.sln --configuration Release
 `SubastaYaDb`, con autenticación integrada de Windows.
 
 ```powershell
-dotnet ef database update --project .\SubastaYa.API
+dotnet ef database update --project .\SubastaYa.Infrastructure --startup-project .\SubastaYa.API
 ```
 
 Debe ejecutarse antes de iniciar un clon limpio; la API no aplica migraciones al
@@ -140,7 +213,7 @@ Swagger está disponible solo en Development:
 - `GET /api/auctions/my-bids`: subastas en las que participó el usuario.
 - `PUT /api/auctions/{subastaId}`: edita una publicación propia permitida.
 - `DELETE /api/auctions/{subastaId}`: elimina una publicación propia sin pujas
-  ni liquidación.
+  ni liquidación ni historial de auditoría asociado.
 
 ### Pujas
 
@@ -151,12 +224,31 @@ Swagger está disponible solo en Development:
 ### Billetera
 
 - `GET /api/wallet/balance`: saldo total, retenido y disponible.
-- `POST /api/wallet/deposit`: acreditación simulada.
+- `POST /api/wallet/deposit`: acreditación simulada; admite el encabezado
+  opcional `Idempotency-Key`.
 - `GET /api/wallet/transactions`: movimientos del ledger.
 - `GET /api/wallet/retained-funds`: fondos retenidos por pujas líderes.
 
 Tarjeta, transferencia y depósito son simulaciones de interfaz; no hay bancos ni
 pasarelas de pago reales.
+
+Para reintentar un depósito sin acreditarlo dos veces, el cliente debe conservar
+y reenviar una clave estable:
+
+```http
+POST /api/wallet/deposit
+Idempotency-Key: deposit-2026-001
+Content-Type: application/json
+
+{
+  "monto": 250.00
+}
+```
+
+La misma clave, usuario e importe devuelven el saldo actual sin crear otro
+movimiento. Reutilizar esa clave con un importe incompatible devuelve HTTP 409 y
+no modifica el saldo. El header es opcional para conservar compatibilidad con
+clientes anteriores; sin él, cada solicitud válida representa un depósito nuevo.
 
 ### Usuario
 
@@ -305,8 +397,11 @@ demostración; no representan datos productivos.
 
 ## Tests
 
-Los tests backend cubren subastas, actividades, usuarios, billetera, reglas y
-concurrencia de pujas, cierre, liquidación y ciclo de estados.
+Los tests backend incluyen pruebas directas de Commands, Queries y reglas de
+negocio, además de integración HTTP. Cubren concurrencia optimista, reintentos e
+idempotencia, seguridad de commit y rollback, atomicidad financiera, auditoría
+append-only, billetera, pujas, cierre, liquidación y ciclo de estados. La cantidad
+de casos no se fija en este documento porque evoluciona con la implementación.
 
 ```powershell
 dotnet test SubastaYa.sln
@@ -365,7 +460,7 @@ no comprueba después el ledger ni la cantidad de filas persistidas.
 ```powershell
 dotnet restore SubastaYa.sln
 dotnet build SubastaYa.sln
-dotnet ef database update --project .\SubastaYa.API
+dotnet ef database update --project .\SubastaYa.Infrastructure --startup-project .\SubastaYa.API
 dotnet run --project .\SubastaYa.API
 ```
 
