@@ -1,9 +1,9 @@
-using SubastaYa.API.Data;
+using SubastaYa.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.Infrastructure.Data;
+
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;

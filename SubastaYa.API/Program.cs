@@ -1,6 +1,6 @@
-using SubastaYa.API.Data;
-using Microsoft.EntityFrameworkCore;
 using SubastaYa.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
 using System.Text.Json.Serialization;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
@@ -170,8 +170,7 @@ if (app.Environment.IsDevelopment())
 
     using var scope = app.Services.CreateScope();
 
-    var dbContext =
-        scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
 
     var developmentAuthentication = scope.ServiceProvider
         .GetRequiredService<

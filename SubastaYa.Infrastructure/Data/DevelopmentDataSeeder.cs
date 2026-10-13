@@ -1,9 +1,9 @@
-using SubastaYa.Infrastructure.Data;
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.Domain.Models;
 
-namespace SubastaYa.API.Data;
+namespace SubastaYa.Infrastructure.Data;
 
 public sealed class DevelopmentDataSeeder
 {
