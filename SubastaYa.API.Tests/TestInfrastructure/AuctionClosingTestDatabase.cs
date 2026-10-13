@@ -1,8 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;
@@ -114,9 +114,9 @@ internal sealed class AuctionClosingTestDatabase : IAsyncDisposable
         {
             Id = AuctionId,
             VendedorId = SellerId,
-            Titulo = "Subasta vencida para liquidación",
-            Descripcion = "Subasta usada por las pruebas del cierre automático.",
-            Categoria = "Tecnología",
+            Titulo = "Subasta vencida para liquidaciÃƒÂ³n",
+            Descripcion = "Subasta usada por las pruebas del cierre automÃƒÂ¡tico.",
+            Categoria = "TecnologÃƒÂ­a",
             PrecioInicial = 100m,
             PrecioActual = 100m,
             IncrementoMinimo = 10m,
@@ -185,7 +185,7 @@ internal sealed class AuctionClosingTestDatabase : IAsyncDisposable
             BilleteraId = BuyerWalletId,
             Tipo = TipoMovimientoBilletera.Retencion,
             Monto = winningAmount,
-            Descripcion = "Retención de la puja ganadora de prueba.",
+            Descripcion = "RetenciÃƒÂ³n de la puja ganadora de prueba.",
             FechaUtc = Now.AddMinutes(-1)
         });
 
@@ -197,7 +197,7 @@ internal sealed class AuctionClosingTestDatabase : IAsyncDisposable
                 BilleteraId = BuyerWalletId,
                 Tipo = TipoMovimientoBilletera.Retencion,
                 Monto = unrelatedRetention,
-                Descripcion = "Retención ajena a la subasta liquidada.",
+                Descripcion = "RetenciÃƒÂ³n ajena a la subasta liquidada.",
                 FechaUtc = Now.AddMinutes(-3)
             });
         }

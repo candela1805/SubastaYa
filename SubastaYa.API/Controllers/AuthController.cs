@@ -1,10 +1,10 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Auth;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 
 namespace SubastaYa.API.Controllers;
 
@@ -85,7 +85,7 @@ public sealed class AuthController : ControllerBase
         {
             return Conflict(new
             {
-                message = "No se pudo crear el usuario. El email podría estar registrado."
+                message = "No se pudo crear el usuario. El email podrÃ­a estar registrado."
             });
         }
 
@@ -116,7 +116,7 @@ public sealed class AuthController : ControllerBase
         {
             return Unauthorized(new
             {
-                message = "Email o contraseña incorrectos."
+                message = "Email o contraseÃ±a incorrectos."
             });
         }
 
@@ -134,7 +134,7 @@ public sealed class AuthController : ControllerBase
         {
             return Unauthorized(new
             {
-                message = "Email o contraseña incorrectos."
+                message = "Email o contraseÃ±a incorrectos."
             });
         }
 
@@ -142,7 +142,7 @@ public sealed class AuthController : ControllerBase
         {
             return Unauthorized(new
             {
-                message = "Email o contraseña incorrectos."
+                message = "Email o contraseÃ±a incorrectos."
             });
         }
 

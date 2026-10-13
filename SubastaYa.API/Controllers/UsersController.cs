@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Users;
-using SubastaYa.API.Data;
+using SubastaYa.Infrastructure.Data;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Controllers;
@@ -45,7 +45,7 @@ public sealed class UsersController : ControllerBase
             .SingleOrDefaultAsync(cancellationToken);
 
         return profile is null
-            ? NotFound(new { message = "No se encontró el usuario autenticado." })
+            ? NotFound(new { message = "No se encontrÃ³ el usuario autenticado." })
             : Ok(profile);
     }
 
@@ -73,7 +73,7 @@ public sealed class UsersController : ControllerBase
             cancellationToken);
 
         if (user is null)
-            return NotFound(new { message = "No se encontró el usuario autenticado." });
+            return NotFound(new { message = "No se encontrÃ³ el usuario autenticado." });
 
         var emailInUse = await _dbContext.Usuarios.AnyAsync(
             item => item.Id != userId && item.Email == email,
@@ -91,7 +91,7 @@ public sealed class UsersController : ControllerBase
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { message = "No se pudo actualizar el perfil. El email podría estar registrado." });
+            return Conflict(new { message = "No se pudo actualizar el perfil. El email podrÃ­a estar registrado." });
         }
 
         return Ok(new UserProfileResponse

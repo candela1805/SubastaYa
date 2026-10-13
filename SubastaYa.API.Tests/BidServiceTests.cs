@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Bids;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
+using SubastaYa.Application.Exceptions;
+using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
 
 namespace SubastaYa.API.Tests;
 
@@ -14,10 +16,18 @@ public sealed class BidServiceTests
         await using var database = await BidTestDatabase.CreateAsync();
         await using var context = database.CreateContext();
 
-        var response = await database.CreateService(context).PlaceBidAsync(
-            BidTestDatabase.AuctionId,
-            BidTestDatabase.BidderOneId,
-            new PlaceBidRequest { Monto = 110m });
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
+        var response = await handler.HandleAsync(
+            new PlaceBidCommand(
+                BidTestDatabase.AuctionId,
+                BidTestDatabase.BidderOneId,
+                110m));
 
         await using var verification = database.CreateContext();
         var auction = await verification.Subastas.SingleAsync();
@@ -40,6 +50,7 @@ public sealed class BidServiceTests
         Assert.Equal(110m, ledger.Monto);
         Assert.Contains(response.Id.ToString(), ledger.Descripcion);
         Assert.Equal("BidPlaced", audit.TipoEvento);
+        Assert.Equal(1, notifier.NotificationCount);
     }
 
     [Fact]
@@ -51,10 +62,18 @@ public sealed class BidServiceTests
             110m);
         await using var context = database.CreateContext();
 
-        var response = await database.CreateService(context).PlaceBidAsync(
-            BidTestDatabase.AuctionId,
-            BidTestDatabase.BidderTwoId,
-            new PlaceBidRequest { Monto = 130m });
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
+        var response = await handler.HandleAsync(
+            new PlaceBidCommand(
+                BidTestDatabase.AuctionId,
+                BidTestDatabase.BidderTwoId,
+                130m));
 
         await using var verification = database.CreateContext();
         var previousWallet = await verification.Billeteras.SingleAsync(
@@ -88,6 +107,7 @@ public sealed class BidServiceTests
         Assert.Single(
             await verification.AuditoriaLogs.Where(
                 item => item.TipoEvento == "BidPlaced").ToListAsync());
+        Assert.Equal(1, notifier.NotificationCount);
     }
 
     [Fact]
@@ -99,10 +119,18 @@ public sealed class BidServiceTests
             110m);
         await using var context = database.CreateContext();
 
-        await database.CreateService(context).PlaceBidAsync(
-            BidTestDatabase.AuctionId,
-            BidTestDatabase.BidderOneId,
-            new PlaceBidRequest { Monto = 130m });
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
+        await handler.HandleAsync(
+            new PlaceBidCommand(
+                BidTestDatabase.AuctionId,
+                BidTestDatabase.BidderOneId,
+                130m));
 
         await using var verification = database.CreateContext();
         var wallet = await verification.Billeteras.SingleAsync(
@@ -122,6 +150,7 @@ public sealed class BidServiceTests
         Assert.Equal(2, bids.Count);
         Assert.Single(bids, bid => bid.EsGanadora);
         Assert.Equal(130m, bids.Single(bid => bid.EsGanadora).Monto);
+        Assert.Equal(1, notifier.NotificationCount);
     }
 
     [Fact]
@@ -131,14 +160,23 @@ public sealed class BidServiceTests
             bidderOneBalance: 109m);
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidInsufficientFundsException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 110m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderOneId,
+                    110m)));
 
         Assert.Equal("INSUFFICIENT_BALANCE", exception.Code);
         await AssertDatabaseUnchangedAsync(database, 109m);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -147,14 +185,23 @@ public sealed class BidServiceTests
         await using var database = await BidTestDatabase.CreateAsync();
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidValidationException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 109.99m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderOneId,
+                    109.99m)));
 
         Assert.Equal("BID_BELOW_MINIMUM", exception.Code);
         await AssertDatabaseUnchangedAsync(database);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -165,13 +212,23 @@ public sealed class BidServiceTests
         foreach (var amount in new decimal?[] { null, 0m, -1m })
         {
             await using var context = database.CreateContext();
+
+            var notifier = new FakeBidNotifier();
+
+            var (handler, repository) =
+                database.CreatePlaceBidHandler(context, notifier);
+
+            await using var repositoryScope = repository;
+
             var exception = await Assert.ThrowsAsync<BidValidationException>(
-                () => database.CreateService(context).PlaceBidAsync(
-                    BidTestDatabase.AuctionId,
-                    BidTestDatabase.BidderOneId,
-                    new PlaceBidRequest { Monto = amount }));
+                () => handler.HandleAsync(
+                    new PlaceBidCommand(
+                        BidTestDatabase.AuctionId,
+                        BidTestDatabase.BidderOneId,
+                        amount)));
 
             Assert.Equal("INVALID_BID_AMOUNT", exception.Code);
+            Assert.Equal(0, notifier.NotificationCount);
         }
 
         await AssertDatabaseUnchangedAsync(database);
@@ -183,14 +240,23 @@ public sealed class BidServiceTests
         await using var database = await BidTestDatabase.CreateAsync();
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidForbiddenException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.SellerId,
-                new PlaceBidRequest { Monto = 110m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.SellerId,
+                    110m)));
 
         Assert.Equal("OWN_AUCTION_BID", exception.Code);
         await AssertDatabaseUnchangedAsync(database);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -199,14 +265,23 @@ public sealed class BidServiceTests
         await using var database = await BidTestDatabase.CreateAsync();
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidNotFoundException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                Guid.Parse("30000000-0000-0000-0000-000000000099"),
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 110m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    Guid.Parse("30000000-0000-0000-0000-000000000099"),
+                    BidTestDatabase.BidderOneId,
+                    110m)));
 
         Assert.Equal("AUCTION_NOT_FOUND", exception.Code);
         await AssertDatabaseUnchangedAsync(database);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -216,14 +291,23 @@ public sealed class BidServiceTests
             auctionState: EstadoSubasta.Finalizada);
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidStateConflictException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 110m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderOneId,
+                    110m)));
 
         Assert.Equal("AUCTION_NOT_ACTIVE", exception.Code);
         await AssertDatabaseUnchangedAsync(database);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -233,14 +317,23 @@ public sealed class BidServiceTests
             remaining: TimeSpan.FromSeconds(-1));
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         var exception = await Assert.ThrowsAsync<BidStateConflictException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 110m }));
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderOneId,
+                    110m)));
 
         Assert.Equal("AUCTION_ENDED", exception.Code);
         await AssertDatabaseUnchangedAsync(database);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Theory]
@@ -256,10 +349,18 @@ public sealed class BidServiceTests
         var originalEnd = database.Now.AddSeconds(remainingSeconds);
         await using var context = database.CreateContext();
 
-        var response = await database.CreateService(context).PlaceBidAsync(
-            BidTestDatabase.AuctionId,
-            BidTestDatabase.BidderOneId,
-            new PlaceBidRequest { Monto = 110m });
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
+        var response = await handler.HandleAsync(
+            new PlaceBidCommand(
+                BidTestDatabase.AuctionId,
+                BidTestDatabase.BidderOneId,
+                110m));
 
         await using var verification = database.CreateContext();
         var auction = await verification.Subastas.SingleAsync();
@@ -273,6 +374,7 @@ public sealed class BidServiceTests
         Assert.Equal(expectedEnd, response.FechaFinUtc);
         Assert.Equal(expectedEnd, auction.FechaFinUtc);
         Assert.Equal(shouldExtend ? 1 : 0, extensionAudits);
+        Assert.Equal(1, notifier.NotificationCount);
     }
 
     [Fact]
@@ -293,13 +395,24 @@ public sealed class BidServiceTests
 
         await using var context = database.CreateContext();
 
-        await Assert.ThrowsAsync<DbUpdateException>(
-            () => database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderOneId,
-                new PlaceBidRequest { Monto = 110m }));
+        var notifier = new FakeBidNotifier();
 
-        await AssertDatabaseUnchangedAsync(database);
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderOneId,
+                    110m)));
+
+        await AssertDatabaseUnchangedAsync(
+        database,
+        expectRejectionAudit: false);
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     [Fact]
@@ -324,11 +437,19 @@ public sealed class BidServiceTests
 
         await using var context = database.CreateContext();
 
+        var notifier = new FakeBidNotifier();
+
+        var (handler, repository) =
+            database.CreatePlaceBidHandler(context, notifier);
+
+        await using var repositoryScope = repository;
+
         await Assert.ThrowsAsync<DbUpdateException>(() =>
-            database.CreateService(context).PlaceBidAsync(
-                BidTestDatabase.AuctionId,
-                BidTestDatabase.BidderTwoId,
-                new PlaceBidRequest { Monto = 120m }));
+            handler.HandleAsync(
+                new PlaceBidCommand(
+                    BidTestDatabase.AuctionId,
+                    BidTestDatabase.BidderTwoId,
+                    120m)));
 
         await using var verification = database.CreateContext();
         var auction = await verification.Subastas.SingleAsync();
@@ -351,23 +472,52 @@ public sealed class BidServiceTests
         Assert.Single(ledger);
         Assert.Equal(TipoMovimientoBilletera.Retencion, ledger[0].Tipo);
         Assert.Empty(await verification.AuditoriaLogs.ToListAsync());
+        Assert.Equal(0, notifier.NotificationCount);
     }
 
     private static async Task AssertDatabaseUnchangedAsync(
-        BidTestDatabase database,
-        decimal bidderOneBalance = 1_000m)
+    BidTestDatabase database,
+    decimal bidderOneBalance = 1_000m,
+    bool expectRejectionAudit = true)
     {
         await using var verification = database.CreateContext();
+
         var auction = await verification.Subastas.SingleAsync();
+
         var wallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
 
+        // La subasta no debe modificarse.
         Assert.Equal(100m, auction.PrecioActual);
+
+        // La billetera no debe modificarse.
         Assert.Equal(bidderOneBalance, wallet.SaldoTotal);
         Assert.Equal(0m, wallet.SaldoRetenido);
         Assert.Equal(bidderOneBalance, wallet.SaldoDisponible);
+
+        // No deben generarse pujas ni movimientos económicos.
         Assert.Empty(await verification.Pujas.ToListAsync());
         Assert.Empty(await verification.TransaccionLedgers.ToListAsync());
-        Assert.Empty(await verification.AuditoriaLogs.ToListAsync());
+
+        // Los rechazos SÍ deben quedar auditados.
+        var auditorias = await verification.AuditoriaLogs
+            .AsNoTracking()
+            .ToListAsync();
+
+        if (expectRejectionAudit)
+        {
+            Assert.NotEmpty(auditorias);
+        }
+        else
+        {
+            Assert.Empty(auditorias);
+        }
+
+        Assert.All(auditorias, auditoria =>
+        {
+            Assert.Equal("BidRejected", auditoria.TipoEvento);
+            Assert.False(string.IsNullOrWhiteSpace(auditoria.Detalle));
+            Assert.Contains("Código:", auditoria.Detalle);
+        });
     }
 }

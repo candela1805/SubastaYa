@@ -1,9 +1,12 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
-using SubastaYa.API.Services;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
+using SubastaYa.Application.Abstractions.Notifications;
+using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
+using SubastaYa.Infrastructure.Repositories;
+using SubastaYa.API.Tests.TestInfrastructure;
+using SubastaYa.Infrastructure.Auditing;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;
 
@@ -96,7 +99,7 @@ internal sealed class BidTestDatabase : IAsyncDisposable
             Vendedor = seller,
             Titulo = "Notebook de prueba",
             Descripcion = "Subasta usada por las pruebas del motor.",
-            Categoria = "Tecnología",
+            Categoria = "TecnologÃƒÂ­a",
             PrecioInicial = 100m,
             PrecioActual = 100m,
             IncrementoMinimo = 10m,
@@ -111,13 +114,25 @@ internal sealed class BidTestDatabase : IAsyncDisposable
 
     public ApplicationDbContext CreateContext() => new(Options);
 
-    public BidService CreateService(ApplicationDbContext context)
+    public (
+    PlaceBidCommandHandler Handler,
+    PlaceBidRepository Repository
+) CreatePlaceBidHandler(
+    ApplicationDbContext context,
+    IBidNotifier notifier)
     {
-        return new BidService(
-            context,
-            NoOpHubContext.Instance,
-            NullLogger<BidService>.Instance,
-            new FixedTimeProvider(Now));
+        var repository = new PlaceBidRepository(context);
+
+        var contextFactory = new TestDbContextFactory(Options);
+        var auditWriter = new BidAuditWriter(contextFactory);
+
+        var handler = new PlaceBidCommandHandler(
+            repository,
+            new FixedTimeProvider(Now),
+            notifier,
+            auditWriter);
+
+        return (handler, repository);
     }
 
     public async Task SeedLeadingBidAsync(
@@ -149,7 +164,7 @@ internal sealed class BidTestDatabase : IAsyncDisposable
             BilleteraId = wallet.Id,
             Tipo = TipoMovimientoBilletera.Retencion,
             Monto = amount,
-            Descripcion = $"Retención inicial para la subasta {AuctionId}.",
+            Descripcion = $"RetenciÃƒÂ³n inicial para la subasta {AuctionId}.",
             FechaUtc = Now.AddMinutes(-1)
         });
 

@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Auctions.Commands;
+using SubastaYa.Application.Features.Auctions.Queries;
 
 namespace SubastaYa.API.Workers;
 
@@ -29,42 +30,22 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
         {
             throw new ArgumentOutOfRangeException(
                 nameof(batchSize),
-                "El tamaño del lote debe ser mayor a cero.");
+                "El tamaÃƒÂ±o del lote debe ser mayor a cero.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
 
         var now = _timeProvider.GetUtcNow();
-        IReadOnlyList<Guid> scheduledAuctionIds;
-        IReadOnlyList<Guid> expiredAuctionIds;
-
+        AuctionCycleCandidatesResult candidates;
         using (var discoveryScope = _scopeFactory.CreateScope())
         {
-            var dbContext = discoveryScope.ServiceProvider
-                .GetRequiredService<ApplicationDbContext>();
-
-            scheduledAuctionIds = await dbContext.Subastas
-                .AsNoTracking()
-                .Where(auction =>
-                    auction.Estado == EstadoSubasta.Programada &&
-                    auction.FechaInicioUtc <= now)
-                .OrderBy(auction => auction.FechaInicioUtc)
-                .ThenBy(auction => auction.Id)
-                .Select(auction => auction.Id)
-                .Take(batchSize)
-                .ToListAsync(cancellationToken);
-
-            expiredAuctionIds = await dbContext.Subastas
-                .AsNoTracking()
-                .Where(auction =>
-                    auction.Estado == EstadoSubasta.Activa &&
-                    auction.FechaFinUtc <= now)
-                .OrderBy(auction => auction.FechaFinUtc)
-                .ThenBy(auction => auction.Id)
-                .Select(auction => auction.Id)
-                .Take(batchSize)
-                .ToListAsync(cancellationToken);
+            var query = discoveryScope.ServiceProvider.GetRequiredService<
+                IQueryHandler<GetAuctionCycleCandidatesQuery, AuctionCycleCandidatesResult>>();
+            candidates = await query.HandleAsync(
+                new GetAuctionCycleCandidatesQuery(now, batchSize), cancellationToken);
         }
+        var scheduledAuctionIds = candidates.ScheduledIds;
+        var expiredAuctionIds = candidates.ExpiredIds;
 
         var activated = 0;
         var finalized = 0;
@@ -113,16 +94,16 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
                     auctionId,
                     cancellationToken);
 
-                if (result.Outcome == AuctionClosingOutcome.Finalized)
+                if (result.Outcome == SubastaYa.Application.Features.Auctions.Commands.AuctionClosingOutcome.Finalized)
                 {
                     finalized += 1;
                 }
-                else if (result.Outcome == AuctionClosingOutcome.Deserted)
+                else if (result.Outcome == SubastaYa.Application.Features.Auctions.Commands.AuctionClosingOutcome.Deserted)
                 {
                     deserted += 1;
                 }
                 else if (result.Outcome ==
-                    AuctionClosingOutcome.ConcurrencyConflict)
+                    SubastaYa.Application.Features.Auctions.Commands.AuctionClosingOutcome.ConcurrencyConflict)
                 {
                     concurrencyConflicts += 1;
                 }
@@ -162,32 +143,20 @@ public sealed class AuctionStateCycleProcessor : IAuctionStateCycleProcessor
         CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var auctionService = scope.ServiceProvider
-            .GetRequiredService<IAuctionService>();
-        var dbContext = scope.ServiceProvider
-            .GetRequiredService<ApplicationDbContext>();
-
-        await auctionService.ActivarAsync(
-            auctionId,
-            cancellationToken);
-
-        return await dbContext.Subastas
-            .AsNoTracking()
-            .Where(auction => auction.Id == auctionId)
-            .Select(auction => (EstadoSubasta?)auction.Estado)
-            .SingleOrDefaultAsync(cancellationToken);
+        var command = scope.ServiceProvider.GetRequiredService<
+            ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>>();
+        return await command.HandleAsync(
+            new ActivateAuctionCommand(auctionId), cancellationToken);
     }
 
-    private async Task<AuctionClosingResult> CloseAuctionAsync(
+    private async Task<SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult> CloseAuctionAsync(
         Guid auctionId,
         CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var closingService = scope.ServiceProvider
-            .GetRequiredService<IAuctionClosingService>();
-
-        return await closingService.ProcessAsync(
-            auctionId,
-            cancellationToken);
+        var command = scope.ServiceProvider.GetRequiredService<
+            ICommandHandler<CloseAuctionCommand, SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult>>();
+        return await command.HandleAsync(
+            new CloseAuctionCommand(auctionId), cancellationToken);
     }
 }

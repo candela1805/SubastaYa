@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;
 

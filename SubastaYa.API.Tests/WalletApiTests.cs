@@ -3,8 +3,8 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SubastaYa.API.Contracts.Wallet;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Tests.TestInfrastructure;
 
 namespace SubastaYa.API.Tests;
@@ -35,6 +35,115 @@ public sealed class WalletApiTests
         var movement = await db.TransaccionLedgers.SingleAsync();
         Assert.Equal(TipoMovimientoBilletera.Deposito, movement.Tipo);
         Assert.Equal(250m, movement.Monto);
+
+        var audit = await db.AuditoriaLogs.SingleAsync();
+
+        Assert.Equal("WalletDeposit", audit.TipoEvento);
+        Assert.Equal(BidTestDatabase.BidderOneId, audit.UsuarioId);
+        Assert.Equal(movement.BilleteraId, audit.BilleteraId);
+        Assert.Null(audit.SubastaId);
+        Assert.Null(movement.ClaveIdempotencia);
+        Assert.Null(audit.ClaveIdempotencia);
+
+        Assert.Contains(movement.Id.ToString(), audit.Detalle);
+        Assert.Contains("250", audit.Detalle);
+        Assert.Equal(movement.FechaUtc, audit.FechaUtc);
+    }
+
+    [Fact]
+    public async Task Repeated_deposit_with_same_idempotency_key_is_applied_once()
+    {
+        await using var factory = new BidApiFactory();
+        await factory.SeedAsync();
+        const string idempotencyKey = "deposit-test-001";
+
+        using var first = await SendJson(
+            factory,
+            HttpMethod.Post,
+            "/api/wallet/deposit",
+            BidTestDatabase.BidderOneId,
+            new { monto = 250m },
+            idempotencyKey);
+        using var retry = await SendJson(
+            factory,
+            HttpMethod.Post,
+            "/api/wallet/deposit",
+            BidTestDatabase.BidderOneId,
+            new { monto = 250m },
+            idempotencyKey);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var retryBalance = await retry.Content
+            .ReadFromJsonAsync<WalletBalanceResponse>();
+        Assert.Equal(1_250m, retryBalance!.Total);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var movement = Assert.Single(await db.TransaccionLedgers.ToListAsync());
+        var audit = Assert.Single(await db.AuditoriaLogs.ToListAsync());
+        Assert.Equal(movement.ClaveIdempotencia, audit.ClaveIdempotencia);
+        Assert.Contains(idempotencyKey, movement.ClaveIdempotencia);
+    }
+
+    [Fact]
+    public async Task Reused_idempotency_key_with_different_amount_is_rejected()
+    {
+        await using var factory = new BidApiFactory();
+        await factory.SeedAsync();
+        const string idempotencyKey = "deposit-test-amount-conflict";
+
+        using var first = await SendJson(
+            factory,
+            HttpMethod.Post,
+            "/api/wallet/deposit",
+            BidTestDatabase.BidderOneId,
+            new { monto = 250m },
+            idempotencyKey);
+        using var conflictingRetry = await SendJson(
+            factory,
+            HttpMethod.Post,
+            "/api/wallet/deposit",
+            BidTestDatabase.BidderOneId,
+            new { monto = 300m },
+            idempotencyKey);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, conflictingRetry.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var wallet = await db.Billeteras.SingleAsync(
+            item => item.UsuarioId == BidTestDatabase.BidderOneId);
+        Assert.Equal(1_250m, wallet.SaldoTotal);
+        Assert.Single(await db.TransaccionLedgers.ToListAsync());
+        Assert.Single(await db.AuditoriaLogs.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(1.001)]
+    [InlineData(10.999)]
+    public async Task Deposit_with_more_than_two_decimals_is_rejected(
+        decimal amount)
+    {
+        await using var factory = new BidApiFactory();
+        await factory.SeedAsync();
+
+        using var response = await SendJson(
+            factory,
+            HttpMethod.Post,
+            "/api/wallet/deposit",
+            BidTestDatabase.BidderOneId,
+            new { monto = amount });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var wallet = await db.Billeteras.SingleAsync(
+            item => item.UsuarioId == BidTestDatabase.BidderOneId);
+        Assert.Equal(1_000m, wallet.SaldoTotal);
+        Assert.Empty(await db.TransaccionLedgers.ToListAsync());
+        Assert.Empty(await db.AuditoriaLogs.ToListAsync());
     }
 
     [Theory]
@@ -59,6 +168,7 @@ public sealed class WalletApiTests
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
         Assert.Equal(1_000m, wallet.SaldoTotal);
         Assert.Empty(await db.TransaccionLedgers.ToListAsync());
+        Assert.Empty(await db.AuditoriaLogs.ToListAsync());
     }
 
     [Fact]
@@ -200,9 +310,12 @@ public sealed class WalletApiTests
         HttpMethod method,
         string url,
         Guid userId,
-        T body)
+        T body,
+        string? idempotencyKey = null)
     {
         using var request = Request(method, url, userId);
+        if (idempotencyKey is not null)
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
         request.Content = JsonContent.Create(body);
         return await factory.CreateClient().SendAsync(request);
     }

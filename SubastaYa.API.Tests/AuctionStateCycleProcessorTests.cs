@@ -2,12 +2,21 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.API.Data;
+using SubastaYa.Infrastructure.Data;
 using SubastaYa.API.Hubs;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 using SubastaYa.API.Workers;
+using SubastaYa.API.Adapters;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Abstractions.Notifications;
+using SubastaYa.Application.Abstractions.Persistence;
+using SubastaYa.Application.Features.Auctions.Commands;
+using SubastaYa.Application.Features.Auctions.Queries;
+using SubastaYa.Infrastructure.Repositories;
+using ApiAuctionClosingOutcome = SubastaYa.API.Services.AuctionClosingOutcome;
+using ApiAuctionClosingResult = SubastaYa.API.Services.AuctionClosingResult;
 
 namespace SubastaYa.API.Tests;
 
@@ -64,9 +73,9 @@ public sealed class AuctionStateCycleProcessorTests
             CreateAuction(skippedId, Now.AddMinutes(-1)));
         host.Probe.Failures.Add(failedId);
         host.Probe.Outcomes[desertedId] =
-            AuctionClosingOutcome.Deserted;
+            ApiAuctionClosingOutcome.Deserted;
         host.Probe.Outcomes[skippedId] =
-            AuctionClosingOutcome.AlreadyProcessed;
+            ApiAuctionClosingOutcome.AlreadyProcessed;
 
         var result = await host.Processor.ProcessCycleAsync(10);
 
@@ -156,8 +165,12 @@ public sealed class AuctionStateCycleProcessorTests
         services.AddSingleton<IHubContext<AuctionHub>>(
             NoOpHubContext.Instance);
         services.AddLogging();
-        services.AddScoped<IAuctionService, AuctionService>();
+        services.AddScoped<IAuctionRepository, AuctionRepository>();
+        services.AddScoped<IAuctionNotifier, SignalRAuctionNotifier>();
+        services.AddScoped<IQueryHandler<GetAuctionCycleCandidatesQuery, AuctionCycleCandidatesResult>, GetAuctionCycleCandidatesQueryHandler>();
+        services.AddScoped<ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>, ActivateAuctionCommandHandler>();
         services.AddScoped<IAuctionClosingService, ProbeClosingService>();
+        services.AddScoped<ICommandHandler<CloseAuctionCommand, SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult>, ProbeClosingCommandHandler>();
 
         return new CycleTestHost(
             services.BuildServiceProvider(),
@@ -174,7 +187,7 @@ public sealed class AuctionStateCycleProcessorTests
         {
             Id = id,
             Titulo = $"Subasta {id}",
-            Descripcion = "Subasta para probar el ciclo automático.",
+            Descripcion = "Subasta para probar el ciclo automÃƒÂ¡tico.",
             Categoria = "Pruebas",
             PrecioInicial = 100m,
             PrecioActual = 100m,
@@ -233,12 +246,12 @@ public sealed class AuctionStateCycleProcessorTests
 
         public HashSet<Guid> Failures { get; } = [];
 
-        public Dictionary<Guid, AuctionClosingOutcome> Outcomes { get; } =
+        public Dictionary<Guid, ApiAuctionClosingOutcome> Outcomes { get; } =
             [];
 
         public Action<Guid>? OnProcessed { get; set; }
 
-        public AuctionClosingResult Process(Guid auctionId)
+        public ApiAuctionClosingResult Process(Guid auctionId)
         {
             ProcessedAuctionIds.Add(auctionId);
             OnProcessed?.Invoke(auctionId);
@@ -251,8 +264,8 @@ public sealed class AuctionStateCycleProcessorTests
 
             var outcome = Outcomes.GetValueOrDefault(
                 auctionId,
-                AuctionClosingOutcome.Finalized);
-            return new AuctionClosingResult(auctionId, outcome);
+                ApiAuctionClosingOutcome.Finalized);
+            return new ApiAuctionClosingResult(auctionId, outcome);
         }
     }
 
@@ -265,11 +278,28 @@ public sealed class AuctionStateCycleProcessorTests
             _probe = probe;
         }
 
-        public Task<AuctionClosingResult> ProcessAsync(
+        public Task<ApiAuctionClosingResult> ProcessAsync(
             Guid auctionId,
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_probe.Process(auctionId));
+        }
+    }
+
+    private sealed class ProbeClosingCommandHandler
+        : ICommandHandler<CloseAuctionCommand, SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult>
+    {
+        private readonly ClosingProbe _probe;
+        public ProbeClosingCommandHandler(ClosingProbe probe) => _probe = probe;
+        public Task<SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult> HandleAsync(
+            CloseAuctionCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            var result = _probe.Process(command.AuctionId);
+            return Task.FromResult(new SubastaYa.Application.Features.Auctions.Commands.AuctionClosingResult(
+                result.AuctionId,
+                Enum.Parse<SubastaYa.Application.Features.Auctions.Commands.AuctionClosingOutcome>(result.Outcome.ToString()),
+                result.SettlementId));
         }
     }
 }

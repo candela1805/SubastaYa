@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Auctions;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Auctions.Commands;
+using SubastaYa.Application.Features.Auctions.DTOs;
+using SubastaYa.Application.Features.Auctions.Queries;
 
 namespace SubastaYa.API.Controllers;
 
@@ -10,14 +14,32 @@ namespace SubastaYa.API.Controllers;
 [Route("api/auctions")]
 public sealed class AuctionsController : ControllerBase
 {
-    private readonly IAuctionService _auctionService;
+    private readonly IQueryHandler<SearchAuctionsQuery, PagedAuctionResult> _searchQuery;
+    private readonly IQueryHandler<GetAuctionCategoriesQuery, IReadOnlyList<string>> _categoriesQuery;
+    private readonly IQueryHandler<GetSellerAuctionsQuery, IReadOnlyList<AuctionResult>> _sellerAuctionsQuery;
+    private readonly IQueryHandler<GetUserBidActivitiesQuery, IReadOnlyList<BidActivityResult>> _bidActivitiesQuery;
+    private readonly ICommandHandler<CreateAuctionCommand, AuctionResult> _createCommand;
+    private readonly ICommandHandler<UpdateAuctionCommand, AuctionResult> _updateCommand;
+    private readonly ICommandHandler<DeleteAuctionCommand, bool> _deleteCommand;
     private readonly ICurrentUserService _currentUserService;
 
     public AuctionsController(
-        IAuctionService auctionService,
+        IQueryHandler<SearchAuctionsQuery, PagedAuctionResult> searchQuery,
+        IQueryHandler<GetAuctionCategoriesQuery, IReadOnlyList<string>> categoriesQuery,
+        IQueryHandler<GetSellerAuctionsQuery, IReadOnlyList<AuctionResult>> sellerAuctionsQuery,
+        IQueryHandler<GetUserBidActivitiesQuery, IReadOnlyList<BidActivityResult>> bidActivitiesQuery,
+        ICommandHandler<CreateAuctionCommand, AuctionResult> createCommand,
+        ICommandHandler<UpdateAuctionCommand, AuctionResult> updateCommand,
+        ICommandHandler<DeleteAuctionCommand, bool> deleteCommand,
         ICurrentUserService currentUserService)
     {
-        _auctionService = auctionService;
+        _searchQuery = searchQuery;
+        _categoriesQuery = categoriesQuery;
+        _sellerAuctionsQuery = sellerAuctionsQuery;
+        _bidActivitiesQuery = bidActivitiesQuery;
+        _createCommand = createCommand;
+        _updateCommand = updateCommand;
+        _deleteCommand = deleteCommand;
         _currentUserService = currentUserService;
     }
 
@@ -39,20 +61,29 @@ public sealed class AuctionsController : ControllerBase
             return BadRequest("Los precios no pueden ser negativos.");
 
         if (precioMin.HasValue && precioMax.HasValue && precioMin > precioMax)
-            return BadRequest("El precio mínimo no puede ser mayor al precio máximo.");
+            return BadRequest("El precio mÃ­nimo no puede ser mayor al precio mÃ¡ximo.");
 
         if (!string.IsNullOrWhiteSpace(ordenar) && ordenar is not ("tiempo" or "precio"))
             return BadRequest("El orden debe ser 'tiempo' o 'precio'.");
 
         if (page < 1)
-            return BadRequest("La página debe ser mayor o igual a 1.");
+            return BadRequest("La pÃ¡gina debe ser mayor o igual a 1.");
 
         if (pageSize is < 1 or > 50)
-            return BadRequest("El tamaño de página debe estar entre 1 y 50.");
+            return BadRequest("El tamaÃ±o de pÃ¡gina debe estar entre 1 y 50.");
 
-        var resultado = await _auctionService.ObtenerSubastasAsync(
+        var result = await _searchQuery.HandleAsync(new SearchAuctionsQuery(
             buscar, precioMin, precioMax, categoria, estado, ordenar,
-            page, pageSize, cancellationToken);
+            page, pageSize), cancellationToken);
+
+        var resultado = new PagedAuctionResponse
+        {
+            Items = result.Items.Select(ToResponse).ToList(),
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalItems = result.TotalItems,
+            TotalPages = result.TotalPages
+        };
 
         return Ok(resultado);
     }
@@ -64,8 +95,8 @@ public sealed class AuctionsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<string>>> ObtenerCategorias(
         CancellationToken cancellationToken)
     {
-        return Ok(await _auctionService.ObtenerCategoriasAsync(
-            cancellationToken));
+        return Ok(await _categoriesQuery.HandleAsync(
+            new GetAuctionCategoriesQuery(), cancellationToken));
     }
 
     [HttpPost]
@@ -86,32 +117,37 @@ public sealed class AuctionsController : ControllerBase
         }
 
         if (string.IsNullOrWhiteSpace(request.Titulo))
-            return BadRequest("El título es obligatorio.");
+            return BadRequest(AuctionCreationRules.TitleRequired);
 
         if (string.IsNullOrWhiteSpace(request.Descripcion))
-            return BadRequest("La descripción es obligatoria.");
+            return BadRequest(AuctionCreationRules.DescriptionRequired);
 
         if (string.IsNullOrWhiteSpace(request.Categoria))
-            return BadRequest("La categoría es obligatoria.");
+            return BadRequest(AuctionCreationRules.CategoryRequired);
 
-        if (request.PrecioInicial <= 0)
-            return BadRequest("El precio inicial debe ser mayor a 0.");
+        try
+        {
+            var result = await _createCommand.HandleAsync(
+                new CreateAuctionCommand(
+                    userId,
+                    request.Titulo,
+                    request.Descripcion,
+                    request.ImagenUrl,
+                    request.Categoria,
+                    request.PrecioInicial,
+                    request.IncrementoMinimo,
+                    request.FechaInicioUtc,
+                    request.FechaFinUtc),
+                cancellationToken);
 
-        if (request.IncrementoMinimo <= 0)
-            return BadRequest("El incremento mínimo debe ser mayor a 0.");
-
-        if (request.FechaFinUtc <= request.FechaInicioUtc)
-            return BadRequest("La fecha de finalización debe ser posterior a la fecha de inicio.");
-
-        if (request.FechaFinUtc <= DateTimeOffset.UtcNow)
-            return BadRequest("La fecha de finalización debe ser futura.");
-
-        var resultado = await _auctionService.CrearSubastaAsync(
-            userId,
-            request,
-            cancellationToken);
-
-        return StatusCode(StatusCodes.Status201Created, resultado);
+            return StatusCode(
+                StatusCodes.Status201Created,
+                ToResponse(result));
+        }
+        catch (AuctionValidationException exception)
+        {
+            return BadRequest(exception.Message);
+        }
     }
 
     [HttpGet("mine")]
@@ -131,11 +167,10 @@ public sealed class AuctionsController : ControllerBase
             });
         }
 
-        var resultado = await _auctionService.ObtenerPublicacionesAsync(
-            userId,
-            cancellationToken);
+        var result = await _sellerAuctionsQuery.HandleAsync(
+            new GetSellerAuctionsQuery(userId), cancellationToken);
 
-        return Ok(resultado);
+        return Ok(result.Select(ToResponse).ToList());
     }
 
     [HttpGet("my-bids")]
@@ -155,9 +190,9 @@ public sealed class AuctionsController : ControllerBase
             });
         }
 
-        return Ok(await _auctionService.ObtenerActividadesDePujasAsync(
-            userId,
-            cancellationToken));
+        var result = await _bidActivitiesQuery.HandleAsync(
+            new GetUserBidActivitiesQuery(userId), cancellationToken);
+        return Ok(result.Select(ToResponse).ToList());
     }
 
     [HttpPut("{subastaId:guid}")]
@@ -181,23 +216,23 @@ public sealed class AuctionsController : ControllerBase
         {
             return BadRequest(new
             {
-                message = "Título, descripción y categoría son obligatorios."
+                message = "TÃ­tulo, descripciÃ³n y categorÃ­a son obligatorios."
             });
         }
 
         try
         {
-            return Ok(await _auctionService.ActualizarPublicacionAsync(
-                subastaId,
-                userId,
-                request,
-                cancellationToken));
+            var result = await _updateCommand.HandleAsync(
+                new UpdateAuctionCommand(subastaId, userId, request.Titulo,
+                    request.Descripcion, request.ImagenUrl, request.Categoria,
+                    request.FechaFinUtc), cancellationToken);
+            return Ok(ToResponse(result));
         }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { message = ex.Message });
         }
-        catch (AuctionOperationConflictException ex)
+        catch (SubastaYa.Application.Features.Auctions.Commands.AuctionOperationConflictException ex)
         {
             return Conflict(new { message = ex.Message });
         }
@@ -218,19 +253,35 @@ public sealed class AuctionsController : ControllerBase
 
         try
         {
-            await _auctionService.EliminarPublicacionAsync(
-                subastaId,
-                userId,
-                cancellationToken);
+            await _deleteCommand.HandleAsync(
+                new DeleteAuctionCommand(subastaId, userId), cancellationToken);
             return NoContent();
         }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { message = ex.Message });
         }
-        catch (AuctionOperationConflictException ex)
+        catch (SubastaYa.Application.Features.Auctions.Commands.AuctionOperationConflictException ex)
         {
             return Conflict(new { message = ex.Message });
         }
     }
+
+    private static AuctionResponse ToResponse(AuctionResult result) => new()
+    {
+        Id = result.Id, Titulo = result.Titulo, Descripcion = result.Descripcion,
+        ImagenUrl = result.ImagenUrl, Categoria = result.Categoria,
+        PrecioInicial = result.PrecioInicial, PrecioActual = result.PrecioActual,
+        IncrementoMinimo = result.IncrementoMinimo, FechaInicioUtc = result.FechaInicioUtc,
+        FechaFinUtc = result.FechaFinUtc, Estado = result.Estado
+    };
+
+    private static BidActivityResponse ToResponse(BidActivityResult result) => new()
+    {
+        SubastaId = result.SubastaId, Titulo = result.Titulo, Descripcion = result.Descripcion,
+        ImagenUrl = result.ImagenUrl, Categoria = result.Categoria, PrecioInicial = result.PrecioInicial,
+        MiOferta = result.MiOferta, OfertaActual = result.OfertaActual,
+        IncrementoMinimo = result.IncrementoMinimo, FechaInicioUtc = result.FechaInicioUtc,
+        FechaFinUtc = result.FechaFinUtc, Estado = result.Estado, Resultado = result.Resultado
+    };
 }

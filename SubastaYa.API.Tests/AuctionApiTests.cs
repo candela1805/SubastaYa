@@ -5,8 +5,8 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SubastaYa.API.Contracts.Auctions;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Tests.TestInfrastructure;
 
 namespace SubastaYa.API.Tests;
@@ -50,10 +50,10 @@ public sealed class AuctionApiTests
         await factory.SeedAsync();
         await Mutate(factory, db =>
         {
-            db.Subastas.Single().Categoria = " tecnología ";
+            db.Subastas.Single().Categoria = " tecnologÃƒÂ­a ";
             db.Subastas.AddRange(
-                AuctionWithCategory("Tecnología"),
-                AuctionWithCategory("Tecnología"),
+                AuctionWithCategory("TecnologÃƒÂ­a"),
+                AuctionWithCategory("TecnologÃƒÂ­a"),
                 AuctionWithCategory("Alpha"),
                 AuctionWithCategory("   "));
         });
@@ -63,7 +63,7 @@ public sealed class AuctionApiTests
         var categories = await response.Content.ReadFromJsonAsync<List<string>>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(new[] { "Alpha", "Tecnología" }, categories);
+        Assert.Equal(new[] { "Alpha", "TecnologÃƒÂ­a" }, categories);
     }
 
     [Fact]
@@ -86,9 +86,9 @@ public sealed class AuctionApiTests
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var auction = await db.Subastas.SingleAsync();
-        Assert.Equal("Título actualizado", auction.Titulo);
-        Assert.Equal("Descripción actualizada", auction.Descripcion);
-        Assert.Equal("Categoría actualizada", auction.Categoria);
+        Assert.Equal("TÃƒÂ­tulo actualizado", auction.Titulo);
+        Assert.Equal("DescripciÃƒÂ³n actualizada", auction.Descripcion);
+        Assert.Equal("CategorÃƒÂ­a actualizada", auction.Categoria);
         Assert.Equal("https://example.test/image.jpg", auction.ImagenUrl);
         Assert.Equal(NewEnd, auction.FechaFinUtc);
         Assert.Equal(100m, auction.PrecioInicial);
@@ -241,7 +241,7 @@ public sealed class AuctionApiTests
     }
 
     [Fact]
-    public async Task Technical_audit_does_not_block_delete_without_bids()
+    public async Task Immutable_audit_blocks_delete_and_is_preserved()
     {
         await using var factory = new BidApiFactory();
         await factory.SeedAsync();
@@ -251,11 +251,11 @@ public sealed class AuctionApiTests
             TipoEvento = "Test", Detalle = "Debe conservarse.", FechaUtc = NewEnd.AddHours(-2)
         }));
         using var response = await Send(factory, HttpMethod.Delete, Url, BidTestDatabase.SellerId);
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await db.Subastas.AnyAsync());
-        Assert.Empty(await db.AuditoriaLogs.ToListAsync());
+        Assert.True(await db.Subastas.AnyAsync());
+        Assert.Single(await db.AuditoriaLogs.ToListAsync());
     }
 
     [Fact]
@@ -281,8 +281,8 @@ public sealed class AuctionApiTests
     private static string Url => $"/api/auctions/{BidTestDatabase.AuctionId}";
     private static UpdateAuctionRequest Update() => new()
     {
-        Titulo = "Título actualizado", Descripcion = "Descripción actualizada",
-        Categoria = "Categoría actualizada", ImagenUrl = "https://example.test/image.jpg",
+        Titulo = "TÃƒÂ­tulo actualizado", Descripcion = "DescripciÃƒÂ³n actualizada",
+        Categoria = "CategorÃƒÂ­a actualizada", ImagenUrl = "https://example.test/image.jpg",
         FechaFinUtc = NewEnd
     };
     private static Puja NewBid() => new()
@@ -296,7 +296,7 @@ public sealed class AuctionApiTests
         Id = Guid.NewGuid(),
         VendedorId = BidTestDatabase.SellerId,
         Titulo = $"Subasta {Guid.NewGuid():N}",
-        Descripcion = "Prueba de categorías.",
+        Descripcion = "Prueba de categorÃƒÂ­as.",
         Categoria = category,
         PrecioInicial = 100m,
         PrecioActual = 100m,

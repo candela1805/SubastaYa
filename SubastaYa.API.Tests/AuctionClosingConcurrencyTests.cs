@@ -2,8 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.API.Data;
-using SubastaYa.API.Models;
+using SubastaYa.Infrastructure.Data;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 
@@ -24,7 +24,7 @@ public sealed class AuctionClosingConcurrencyTests
         firstAuction.Titulo = "Cambio confirmado";
         await firstContext.SaveChangesAsync();
 
-        staleAuction.Titulo = "Cambio con versión obsoleta";
+        staleAuction.Titulo = "Cambio con versiÃƒÂ³n obsoleta";
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
             () => staleContext.SaveChangesAsync());
@@ -33,7 +33,7 @@ public sealed class AuctionClosingConcurrencyTests
     [Fact]
     public async Task Two_closers_only_settle_the_auction_once()
     {
-        // InMemory se usa únicamente para coordinar dos escrituras sobre el
+        // InMemory se usa ÃƒÂºnicamente para coordinar dos escrituras sobre el
         // mismo token. Atomicidad, restricciones y rollback se prueban con
         // SQLite relacional en AuctionClosingServiceTests.
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -189,7 +189,7 @@ public sealed class AuctionClosingConcurrencyTests
             BilleteraId = buyerWalletId,
             Tipo = TipoMovimientoBilletera.Retencion,
             Monto = 130m,
-            Descripcion = "Retención previa al cierre concurrente.",
+            Descripcion = "RetenciÃƒÂ³n previa al cierre concurrente.",
             FechaUtc = now.AddMinutes(-2)
         });
 

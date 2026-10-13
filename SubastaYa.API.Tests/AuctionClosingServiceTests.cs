@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Models;
+using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 
@@ -384,7 +384,7 @@ public sealed class AuctionClosingServiceTests
             BilleteraId = AuctionClosingTestDatabase.BuyerWalletId,
             Tipo = TipoMovimientoBilletera.Deposito,
             Monto = 0m,
-            Descripcion = "Movimiento inválido de prueba.",
+            Descripcion = "Movimiento invÃ¡lido de prueba.",
             FechaUtc = setup.Now
         });
 
@@ -433,7 +433,7 @@ public sealed class AuctionClosingServiceTests
         {
             var movement = await ledgerContext.TransaccionLedgers
                 .FirstAsync(item => item.LiquidacionSubastaId != null);
-            movement.Descripcion = "Alteración no permitida";
+            movement.Descripcion = "AlteraciÃ³n no permitida";
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () => ledgerContext.SaveChangesAsync());
         }
@@ -441,7 +441,7 @@ public sealed class AuctionClosingServiceTests
         await using (var auditContext = setup.CreateContext())
         {
             var audit = await auditContext.AuditoriaLogs.SingleAsync();
-            audit.Detalle = "Alteración no permitida";
+            audit.Detalle = "AlteraciÃ³n no permitida";
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () => auditContext.SaveChangesAsync());
         }
