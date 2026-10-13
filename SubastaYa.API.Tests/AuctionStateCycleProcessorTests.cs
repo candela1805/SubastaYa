@@ -8,6 +8,8 @@ using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 using SubastaYa.API.Workers;
+using SubastaYa.Aplicacion.Repositories;
+using SubastaYa.Infraestructura.Repositories;
 
 namespace SubastaYa.API.Tests;
 
@@ -156,6 +158,7 @@ public sealed class AuctionStateCycleProcessorTests
         services.AddSingleton<IHubContext<AuctionHub>>(
             NoOpHubContext.Instance);
         services.AddLogging();
+        services.AddScoped<ICatalogoRepository, CatalogoRepository>();
         services.AddScoped<IAuctionService, AuctionService>();
         services.AddScoped<IAuctionClosingService, ProbeClosingService>();
 

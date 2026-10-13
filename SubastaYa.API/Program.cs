@@ -9,6 +9,8 @@ using SubastaYa.API.Authentication;
 using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Identity;
+using SubastaYa.Aplicacion.Repositories;
+using SubastaYa.Infraestructura.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +64,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<IWalletService, WalletService>();
+builder.Services.AddScoped<ICatalogoRepository, CatalogoRepository>();
 builder.Services.AddScoped<IAuctionService, AuctionService>();
 builder.Services.AddScoped<IBidService, BidService>();
 builder.Services.AddScoped<IAuctionClosingService, AuctionClosingService>();
