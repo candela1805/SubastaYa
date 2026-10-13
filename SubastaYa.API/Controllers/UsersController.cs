@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Users;
-using SubastaYa.API.Data;
+using SubastaYa.Infraestructura.Data;
 using SubastaYa.API.Services;
 
 namespace SubastaYa.API.Controllers;

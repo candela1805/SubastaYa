@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using SubastaYa.API.Data;
+using SubastaYa.Infraestructura.Data;
 
 #nullable disable
 
-namespace SubastaYa.API.Migrations
+namespace SubastaYa.Infraestructura.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260914170509_AddAuctionOwnership")]
+    partial class AddAuctionOwnership
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,15 +25,11 @@ namespace SubastaYa.API.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.AuditoriaLog", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.AuditoriaLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ClaveIdempotencia")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
 
                     b.Property<string>("Detalle")
                         .IsRequired()
@@ -50,17 +49,12 @@ namespace SubastaYa.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ClaveIdempotencia")
-                        .IsUnique()
-                        .HasDatabaseName("UX_AuditoriaLogs_ClaveIdempotencia")
-                        .HasFilter("[ClaveIdempotencia] IS NOT NULL");
-
                     b.HasIndex("SubastaId", "FechaUtc");
 
                     b.ToTable("AuditoriaLogs");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Billetera", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Billetera", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -102,62 +96,11 @@ namespace SubastaYa.API.Migrations
                         });
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.LiquidacionSubasta", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Puja", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("CompradorId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("FechaAdjudicacionUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("FechaLiquidacionUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<decimal>("ImporteFinal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<Guid>("PujaGanadoraId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("SubastaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("VendedorId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompradorId");
-
-                    b.HasIndex("PujaGanadoraId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LiquidacionesSubasta_PujaGanadoraId");
-
-                    b.HasIndex("SubastaId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LiquidacionesSubasta_SubastaId");
-
-                    b.HasIndex("VendedorId");
-
-                    b.ToTable("LiquidacionesSubasta", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_LiquidacionesSubasta_ImporteFinalPositivo", "[ImporteFinal] > 0");
-                        });
-                });
-
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Puja", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("EsGanadora")
-                        .HasColumnType("bit");
 
                     b.Property<DateTimeOffset>("FechaUtc")
                         .HasColumnType("datetimeoffset");
@@ -173,11 +116,6 @@ namespace SubastaYa.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SubastaId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_Pujas_SubastaId_Ganadora")
-                        .HasFilter("[EsGanadora] = 1");
-
                     b.HasIndex("UsuarioId");
 
                     b.HasIndex("SubastaId", "FechaUtc");
@@ -185,7 +123,7 @@ namespace SubastaYa.API.Migrations
                     b.ToTable("Pujas");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Subasta", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Subasta", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -254,16 +192,10 @@ namespace SubastaYa.API.Migrations
 
                     b.HasIndex("VendedorId");
 
-                    b.HasIndex("Estado", "FechaFinUtc", "Id")
-                        .HasDatabaseName("IX_Subastas_Estado_FechaFinUtc_Id");
-
-                    b.HasIndex("Estado", "FechaInicioUtc", "Id")
-                        .HasDatabaseName("IX_Subastas_Estado_FechaInicioUtc_Id");
-
                     b.ToTable("Subastas", (string)null);
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.TransaccionLedger", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.TransaccionLedger", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -272,10 +204,6 @@ namespace SubastaYa.API.Migrations
                     b.Property<Guid>("BilleteraId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("ClaveIdempotencia")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
                     b.Property<string>("Descripcion")
                         .IsRequired()
                         .HasMaxLength(250)
@@ -283,9 +211,6 @@ namespace SubastaYa.API.Migrations
 
                     b.Property<DateTimeOffset>("FechaUtc")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid?>("LiquidacionSubastaId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal>("Monto")
                         .HasPrecision(18, 2)
@@ -300,25 +225,12 @@ namespace SubastaYa.API.Migrations
 
                     b.HasIndex("BilleteraId");
 
-                    b.HasIndex("ClaveIdempotencia")
-                        .IsUnique()
-                        .HasDatabaseName("UX_TransaccionesLedger_ClaveIdempotencia")
-                        .HasFilter("[ClaveIdempotencia] IS NOT NULL");
-
                     b.HasIndex("FechaUtc");
 
-                    b.HasIndex("LiquidacionSubastaId", "Tipo")
-                        .IsUnique()
-                        .HasDatabaseName("UX_TransaccionesLedger_LiquidacionSubastaId_Tipo")
-                        .HasFilter("[LiquidacionSubastaId] IS NOT NULL");
-
-                    b.ToTable("TransaccionesLedger", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_TransaccionesLedger_MontoPositivo", "[Monto] > 0");
-                        });
+                    b.ToTable("TransaccionesLedger", (string)null);
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Usuario", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Usuario", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -350,9 +262,9 @@ namespace SubastaYa.API.Migrations
                     b.ToTable("Usuarios", (string)null);
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.AuditoriaLog", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.AuditoriaLog", b =>
                 {
-                    b.HasOne("SubastaYa.Dominio.Models.Subasta", "Subasta")
+                    b.HasOne("SubastaYa.API.Models.Subasta", "Subasta")
                         .WithMany()
                         .HasForeignKey("SubastaId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -361,61 +273,26 @@ namespace SubastaYa.API.Migrations
                     b.Navigation("Subasta");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Billetera", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Billetera", b =>
                 {
-                    b.HasOne("SubastaYa.Dominio.Models.Usuario", "Usuario")
+                    b.HasOne("SubastaYa.API.Models.Usuario", "Usuario")
                         .WithOne("Billetera")
-                        .HasForeignKey("SubastaYa.Dominio.Models.Billetera", "UsuarioId")
+                        .HasForeignKey("SubastaYa.API.Models.Billetera", "UsuarioId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Usuario");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.LiquidacionSubasta", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Puja", b =>
                 {
-                    b.HasOne("SubastaYa.Dominio.Models.Usuario", "Comprador")
-                        .WithMany()
-                        .HasForeignKey("CompradorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SubastaYa.Dominio.Models.Puja", "PujaGanadora")
-                        .WithMany()
-                        .HasForeignKey("PujaGanadoraId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SubastaYa.Dominio.Models.Subasta", "Subasta")
-                        .WithOne("Liquidacion")
-                        .HasForeignKey("SubastaYa.Dominio.Models.LiquidacionSubasta", "SubastaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SubastaYa.Dominio.Models.Usuario", "Vendedor")
-                        .WithMany()
-                        .HasForeignKey("VendedorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Comprador");
-
-                    b.Navigation("PujaGanadora");
-
-                    b.Navigation("Subasta");
-
-                    b.Navigation("Vendedor");
-                });
-
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Puja", b =>
-                {
-                    b.HasOne("SubastaYa.Dominio.Models.Subasta", "Subasta")
+                    b.HasOne("SubastaYa.API.Models.Subasta", "Subasta")
                         .WithMany()
                         .HasForeignKey("SubastaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SubastaYa.Dominio.Models.Usuario", "Usuario")
+                    b.HasOne("SubastaYa.API.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -426,9 +303,9 @@ namespace SubastaYa.API.Migrations
                     b.Navigation("Usuario");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Subasta", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Subasta", b =>
                 {
-                    b.HasOne("SubastaYa.Dominio.Models.Usuario", "Vendedor")
+                    b.HasOne("SubastaYa.API.Models.Usuario", "Vendedor")
                         .WithMany()
                         .HasForeignKey("VendedorId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -436,35 +313,18 @@ namespace SubastaYa.API.Migrations
                     b.Navigation("Vendedor");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.TransaccionLedger", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.TransaccionLedger", b =>
                 {
-                    b.HasOne("SubastaYa.Dominio.Models.Billetera", "Billetera")
+                    b.HasOne("SubastaYa.API.Models.Billetera", "Billetera")
                         .WithMany()
                         .HasForeignKey("BilleteraId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SubastaYa.Dominio.Models.LiquidacionSubasta", "LiquidacionSubasta")
-                        .WithMany("Movimientos")
-                        .HasForeignKey("LiquidacionSubastaId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Billetera");
-
-                    b.Navigation("LiquidacionSubasta");
                 });
 
-            modelBuilder.Entity("SubastaYa.Dominio.Models.LiquidacionSubasta", b =>
-                {
-                    b.Navigation("Movimientos");
-                });
-
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Subasta", b =>
-                {
-                    b.Navigation("Liquidacion");
-                });
-
-            modelBuilder.Entity("SubastaYa.Dominio.Models.Usuario", b =>
+            modelBuilder.Entity("SubastaYa.API.Models.Usuario", b =>
                 {
                     b.Navigation("Billetera");
                 });

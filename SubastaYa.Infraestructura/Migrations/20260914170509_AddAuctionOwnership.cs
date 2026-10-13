@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace SubastaYa.API.Migrations
+namespace SubastaYa.Infraestructura.Migrations
 {
     /// <inheritdoc />
     public partial class AddAuctionOwnership : Migration

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using SubastaYa.API.Data;
+using SubastaYa.Infraestructura.Data;
 using SubastaYa.API.Hubs;
 using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;

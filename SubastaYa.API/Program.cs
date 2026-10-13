@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Data;
+using SubastaYa.Infraestructura.Data;
 using System.Text.Json.Serialization;
 using SubastaYa.Dominio.Models;
 using SubastaYa.API.Services;

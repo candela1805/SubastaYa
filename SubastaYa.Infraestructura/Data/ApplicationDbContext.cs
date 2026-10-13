@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SubastaYa.Dominio.Models;
 
-namespace SubastaYa.API.Data;
+namespace SubastaYa.Infraestructura.Data;
 
 public sealed class ApplicationDbContext : DbContext
 {
