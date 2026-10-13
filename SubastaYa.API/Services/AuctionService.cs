@@ -155,10 +155,10 @@ public sealed class AuctionService : IAuctionService
     }
 
     public async Task<AuctionResponse> ActualizarPublicacionAsync(
-        Guid subastaId,
-        Guid vendedorId,
-        UpdateAuctionRequest request,
-        CancellationToken cancellationToken = default)
+    Guid subastaId,
+    Guid vendedorId,
+    UpdateAuctionRequest request,
+    CancellationToken cancellationToken = default)
     {
         var subasta = await ObtenerPublicacionDelVendedorAsync(
             subastaId,
@@ -171,9 +171,9 @@ public sealed class AuctionService : IAuctionService
                 "Las publicaciones finalizadas o desiertas no pueden editarse.");
         }
 
-        if (await _dbContext.Pujas.AnyAsync(
-                puja => puja.SubastaId == subastaId,
-                cancellationToken))
+        if (await _subastaRepository.TienePujasAsync(
+            subastaId,
+            cancellationToken))
         {
             throw new AuctionOperationConflictException(
                 "La publicación no puede editarse porque ya recibió pujas.");
@@ -194,7 +194,7 @@ public sealed class AuctionService : IAuctionService
             : request.ImagenUrl.Trim();
         subasta.FechaFinUtc = request.FechaFinUtc;
 
-        _dbContext.AuditoriaLogs.Add(new AuditoriaLog
+        _subastaRepository.AgregarAuditoria(new AuditoriaLog
         {
             Id = Guid.NewGuid(),
             SubastaId = subasta.Id,
@@ -205,7 +205,7 @@ public sealed class AuctionService : IAuctionService
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _subastaRepository.GuardarCambiosAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -226,11 +226,12 @@ public sealed class AuctionService : IAuctionService
             vendedorId,
             cancellationToken);
 
-        var tienePujas = await _dbContext.Pujas.AnyAsync(
-            puja => puja.SubastaId == subastaId,
-            cancellationToken);
-        var tieneLiquidacion = await _dbContext.LiquidacionesSubasta.AnyAsync(
-            liquidacion => liquidacion.SubastaId == subastaId,
+        var tienePujas = await _subastaRepository.TienePujasAsync(
+    subastaId,
+    cancellationToken);
+
+        var tieneLiquidacion = await _subastaRepository.TieneLiquidacionAsync(
+            subastaId,
             cancellationToken);
 
         if (tienePujas)
@@ -245,16 +246,13 @@ public sealed class AuctionService : IAuctionService
                 "Esta publicación no puede eliminarse porque tiene una liquidación asociada.");
         }
 
-        var auditorias = await _dbContext.AuditoriaLogs
-            .Where(auditoria => auditoria.SubastaId == subastaId)
-            .ToListAsync(cancellationToken);
-
-        _dbContext.AuditoriaLogs.RemoveRange(auditorias);
-        _dbContext.Subastas.Remove(subasta);
+        await _subastaRepository.PrepararEliminacionAsync(
+            subasta,
+             cancellationToken);
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _subastaRepository.GuardarCambiosAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -269,12 +267,13 @@ public sealed class AuctionService : IAuctionService
     }
 
     private async Task<Subasta> ObtenerPublicacionDelVendedorAsync(
-        Guid subastaId,
-        Guid vendedorId,
-        CancellationToken cancellationToken)
+    Guid subastaId,
+    Guid vendedorId,
+    CancellationToken cancellationToken)
     {
-        var subasta = await _dbContext.Subastas.SingleOrDefaultAsync(
-            item => item.Id == subastaId && item.VendedorId == vendedorId,
+        var subasta = await _subastaRepository.ObtenerDelVendedorAsync(
+            subastaId,
+            vendedorId,
             cancellationToken);
 
         if (subasta is null)
@@ -290,8 +289,9 @@ public sealed class AuctionService : IAuctionService
         Guid subastaId,
         CancellationToken cancellationToken = default)
     {
-        var subasta = await _dbContext.Subastas
-            .FirstOrDefaultAsync(s => s.Id == subastaId, cancellationToken);
+        var subasta = await _subastaRepository.ObtenerPorIdAsync(
+            subastaId,
+            cancellationToken);
 
         if (subasta is null)
         {
@@ -310,7 +310,7 @@ public sealed class AuctionService : IAuctionService
 
         subasta.Estado = nuevoEstado;
 
-        _dbContext.AuditoriaLogs.Add(new AuditoriaLog
+        _subastaRepository.AgregarAuditoria(new AuditoriaLog
         {
             Id = Guid.NewGuid(),
             SubastaId = subastaId,
@@ -319,7 +319,7 @@ public sealed class AuctionService : IAuctionService
             FechaUtc = ahora
         });
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _subastaRepository.GuardarCambiosAsync(cancellationToken);
 
         try
         {
