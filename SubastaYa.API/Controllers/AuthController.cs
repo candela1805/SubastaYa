@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Auth;
-using SubastaYa.Infrastructure.Data;
+using SubastaYa.Application.Abstractions.Persistence;
+using SubastaYa.Application.Exceptions;
 using SubastaYa.Domain.Models;
 
 namespace SubastaYa.API.Controllers;
@@ -12,14 +12,14 @@ namespace SubastaYa.API.Controllers;
 [Route("api/auth")]
 public sealed class AuthController : ControllerBase
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher<Usuario> _passwordHasher;
 
     public AuthController(
-        ApplicationDbContext dbContext,
+        IUserRepository userRepository,
         IPasswordHasher<Usuario> passwordHasher)
     {
-        _dbContext = dbContext;
+        _userRepository = userRepository;
         _passwordHasher = passwordHasher;
     }
 
@@ -40,10 +40,10 @@ public sealed class AuthController : ControllerBase
             });
         }
 
-        var emailExists = await _dbContext.Usuarios
-            .AnyAsync(
-                usuario => usuario.Email == email,
-                cancellationToken);
+        var emailExists = await _userRepository.EmailExistsAsync(
+            email,
+            null,
+            cancellationToken);
 
         if (emailExists)
         {
@@ -61,10 +61,9 @@ public sealed class AuthController : ControllerBase
             FechaRegistro = DateTimeOffset.UtcNow
         };
 
-        usuario.PasswordHash =
-            _passwordHasher.HashPassword(
-                usuario,
-                request.Password);
+        usuario.PasswordHash = _passwordHasher.HashPassword(
+            usuario,
+            request.Password);
 
         usuario.Billetera = new Billetera
         {
@@ -75,17 +74,17 @@ public sealed class AuthController : ControllerBase
             SaldoDisponible = 0
         };
 
-        _dbContext.Usuarios.Add(usuario);
+        _userRepository.Add(usuario);
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _userRepository.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (UserPersistenceException)
         {
             return Conflict(new
             {
-                message = "No se pudo crear el usuario. El email podrÃ­a estar registrado."
+                message = "No se pudo crear el usuario. El email podría estar registrado."
             });
         }
 
@@ -107,16 +106,15 @@ public sealed class AuthController : ControllerBase
     {
         var email = request.Email.Trim().ToLowerInvariant();
 
-        var usuario = await _dbContext.Usuarios
-            .SingleOrDefaultAsync(
-                usuario => usuario.Email == email,
-                cancellationToken);
+        var usuario = await _userRepository.GetByEmailAsync(
+            email,
+            cancellationToken);
 
         if (usuario is null)
         {
             return Unauthorized(new
             {
-                message = "Email o contraseÃ±a incorrectos."
+                message = "Email o contraseña incorrectos."
             });
         }
 
@@ -124,17 +122,16 @@ public sealed class AuthController : ControllerBase
 
         try
         {
-            verificationResult =
-                _passwordHasher.VerifyHashedPassword(
-                    usuario,
-                    usuario.PasswordHash,
-                    request.Password);
+            verificationResult = _passwordHasher.VerifyHashedPassword(
+                usuario,
+                usuario.PasswordHash,
+                request.Password);
         }
         catch (FormatException)
         {
             return Unauthorized(new
             {
-                message = "Email o contraseÃ±a incorrectos."
+                message = "Email o contraseña incorrectos."
             });
         }
 
@@ -142,19 +139,18 @@ public sealed class AuthController : ControllerBase
         {
             return Unauthorized(new
             {
-                message = "Email o contraseÃ±a incorrectos."
+                message = "Email o contraseña incorrectos."
             });
         }
 
         if (verificationResult ==
             PasswordVerificationResult.SuccessRehashNeeded)
         {
-            usuario.PasswordHash =
-                _passwordHasher.HashPassword(
-                    usuario,
-                    request.Password);
+            usuario.PasswordHash = _passwordHasher.HashPassword(
+                usuario,
+                request.Password);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _userRepository.SaveChangesAsync(cancellationToken);
         }
 
         return Ok(new AuthResponse
