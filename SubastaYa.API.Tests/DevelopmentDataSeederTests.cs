@@ -7,6 +7,10 @@ using SubastaYa.Infrastructure.Data;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
+using SubastaYa.API.Adapters;
+using SubastaYa.Infrastructure.Repositories;
+using CloseHandler =
+    SubastaYa.Application.Features.Auctions.Commands.CloseAuctionCommandHandler;
 
 namespace SubastaYa.API.Tests;
 
@@ -101,11 +105,18 @@ public sealed class DevelopmentDataSeederTests
     {
         await using var db = CreateContext();
         await Seed(db);
-        var service = new AuctionClosingService(
-            db,
+        var repository = new AuctionClosingRepository(db);
+
+        var notifier = new SignalRAuctionNotifier(
             NoOpHubContext.Instance,
-            new FixedTimeProvider(Now),
-            NullLogger<AuctionClosingService>.Instance);
+            NullLogger<SignalRAuctionNotifier>.Instance);
+
+        var handler = new CloseHandler(
+            repository,
+            notifier,
+            new FixedTimeProvider(Now));
+
+        var service = new AuctionClosingService(handler);
 
         var finalized = await service.ProcessAsync(
             DevelopmentDataSeeder.ExpiredWinnerAuctionId);
