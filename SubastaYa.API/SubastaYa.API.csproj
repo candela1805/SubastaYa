@@ -15,4 +15,9 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SubastaYa.Aplicacion\SubastaYa.Aplicacion.csproj" />
+    <ProjectReference Include="..\SubastaYa.Infraestructura\SubastaYa.Infraestructura.csproj" />
+  </ItemGroup>
+
 </Project>
