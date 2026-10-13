@@ -84,6 +84,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<IAuctionRepository, AuctionRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuctionNotifier, SignalRAuctionNotifier>();
 builder.Services.AddScoped<IQueryHandler<SearchAuctionsQuery, PagedAuctionResult>, SearchAuctionsQueryHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAuctionCategoriesQuery, IReadOnlyList<string>>, GetAuctionCategoriesQueryHandler>();
