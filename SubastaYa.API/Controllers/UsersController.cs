@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SubastaYa.API.Contracts.Users;
 using SubastaYa.API.Services;
-using SubastaYa.Application.Abstractions.Persistence;
-using SubastaYa.Application.Exceptions;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Users;
 
 namespace SubastaYa.API.Controllers;
 
@@ -12,14 +12,21 @@ namespace SubastaYa.API.Controllers;
 [Route("api/users")]
 public sealed class UsersController : ControllerBase
 {
-    private readonly IUserRepository _userRepository;
+    private readonly IQueryHandler<
+        GetUserProfileQuery, UserProfileResult?> _getProfileHandler;
+
+    private readonly ICommandHandler<
+        UpdateUserProfileCommand, UserProfileResult?> _updateProfileHandler;
+
     private readonly ICurrentUserService _currentUserService;
 
     public UsersController(
-        IUserRepository userRepository,
+        IQueryHandler<GetUserProfileQuery, UserProfileResult?> getProfileHandler,
+        ICommandHandler<UpdateUserProfileCommand, UserProfileResult?> updateProfileHandler,
         ICurrentUserService currentUserService)
     {
-        _userRepository = userRepository;
+        _getProfileHandler = getProfileHandler;
+        _updateProfileHandler = updateProfileHandler;
         _currentUserService = currentUserService;
     }
 
@@ -33,11 +40,11 @@ public sealed class UsersController : ControllerBase
         if (!_currentUserService.TryGetUserId(out var userId))
             return Unauthorized();
 
-        var user = await _userRepository.GetByIdAsync(
-            userId,
+        var result = await _getProfileHandler.HandleAsync(
+            new GetUserProfileQuery(userId),
             cancellationToken);
 
-        if (user is null)
+        if (result is null)
         {
             return NotFound(new
             {
@@ -45,12 +52,7 @@ public sealed class UsersController : ControllerBase
             });
         }
 
-        return Ok(new UserProfileResponse
-        {
-            UserId = user.Id,
-            Nombre = user.Nombre,
-            Email = user.Email
-        });
+        return Ok(MapearRespuesta(result));
     }
 
     [HttpPut("me")]
@@ -66,62 +68,43 @@ public sealed class UsersController : ControllerBase
         if (!_currentUserService.TryGetUserId(out var userId))
             return Unauthorized();
 
-        var nombre = request.Nombre.Trim();
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(nombre))
-        {
-            return BadRequest(new
-            {
-                message = "El nombre es obligatorio."
-            });
-        }
-
-        var user = await _userRepository.GetByIdAsync(
-            userId,
-            cancellationToken);
-
-        if (user is null)
-        {
-            return NotFound(new
-            {
-                message = "No se encontró el usuario autenticado."
-            });
-        }
-
-        var emailInUse = await _userRepository.EmailExistsAsync(
-            email,
-            userId,
-            cancellationToken);
-
-        if (emailInUse)
-        {
-            return Conflict(new
-            {
-                message = "Ya existe un usuario registrado con ese email."
-            });
-        }
-
-        user.Nombre = nombre;
-        user.Email = email;
-
         try
         {
-            await _userRepository.SaveChangesAsync(cancellationToken);
-        }
-        catch (UserPersistenceException)
-        {
-            return Conflict(new
-            {
-                message = "No se pudo actualizar el perfil. El email podría estar registrado."
-            });
-        }
+            var result = await _updateProfileHandler.HandleAsync(
+                new UpdateUserProfileCommand(
+                    userId,
+                    request.Nombre,
+                    request.Email),
+                cancellationToken);
 
-        return Ok(new UserProfileResponse
+            if (result is null)
+            {
+                return NotFound(new
+                {
+                    message = "No se encontró el usuario autenticado."
+                });
+            }
+
+            return Ok(MapearRespuesta(result));
+        }
+        catch (UserProfileValidationException ex)
         {
-            UserId = user.Id,
-            Nombre = user.Nombre,
-            Email = user.Email
-        });
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UserProfileConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    private static UserProfileResponse MapearRespuesta(
+        UserProfileResult result)
+    {
+        return new UserProfileResponse
+        {
+            UserId = result.UserId,
+            Nombre = result.Nombre,
+            Email = result.Email
+        };
     }
 }

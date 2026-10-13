@@ -1,6 +1,7 @@
 using SubastaYa.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Users;
 using System.Text.Json.Serialization;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
@@ -11,7 +12,7 @@ using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Identity;
 using SubastaYa.API.Adapters;
-using SubastaYa.Application.Abstractions;
+
 using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Infrastructure.Repositories;
 using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
@@ -39,6 +40,13 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter());
     });
+builder.Services.AddScoped<
+    IQueryHandler<GetUserProfileQuery, UserProfileResult?>,
+    GetUserProfileHandler>();
+
+builder.Services.AddScoped<
+    ICommandHandler<UpdateUserProfileCommand, UserProfileResult?>,
+    UpdateUserProfileHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
