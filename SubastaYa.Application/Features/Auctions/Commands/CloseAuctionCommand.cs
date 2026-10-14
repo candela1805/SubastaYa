@@ -69,11 +69,15 @@ public sealed class CloseAuctionCommandHandler : ICommandHandler<CloseAuctionCom
                 return new(auction.Id, AuctionClosingOutcome.Deserted);
             }
             var winner = winners[0];
-            var amounts = await _repository.GetBidAmountsAsync(auction.Id, cancellationToken);
-            if (winner.Monto != amounts.Max() || winner.Monto != auction.PrecioActual || winner.Monto <= 0) throw new InvalidOperationException($"La puja ganadora de la subasta {auction.Id} no coincide con su precio final.");
-            if (!auction.VendedorId.HasValue) throw new InvalidOperationException($"La subasta {auction.Id} no tiene vendedor asignado.");
-            var sellerId = auction.VendedorId.Value;
-            if (sellerId == winner.UsuarioId) throw new InvalidOperationException($"El vendedor de la subasta {auction.Id} no puede ser su comprador.");
+
+            var amounts = await _repository.GetBidAmountsAsync(
+                auction.Id,
+                cancellationToken);
+
+            var sellerId = AuctionSettlementRules.ValidarGanador(
+                auction,
+                winner,
+                amounts);
             var buyer = await _repository.GetWalletAsync(winner.UsuarioId, cancellationToken) ?? throw new InvalidOperationException($"El comprador de la subasta {auction.Id} no tiene billetera.");
             var seller = await _repository.GetWalletAsync(sellerId, cancellationToken) ?? throw new InvalidOperationException($"El vendedor de la subasta {auction.Id} no tiene billetera.");
             var amount = winner.Monto;
