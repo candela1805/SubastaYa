@@ -1,7 +1,7 @@
 using SubastaYa.Application.Abstractions;
 using SubastaYa.Application.Abstractions.Notifications;
 using SubastaYa.Application.Abstractions.Persistence;
-using SubastaYa.Application.Features.Wallet.Commands.DepositWallet;
+using SubastaYa.Domain.Rules;
 using SubastaYa.Domain.Models;
 using System.Runtime.ExceptionServices;
 
@@ -77,10 +77,26 @@ public sealed class CloseAuctionCommandHandler : ICommandHandler<CloseAuctionCom
             var buyer = await _repository.GetWalletAsync(winner.UsuarioId, cancellationToken) ?? throw new InvalidOperationException($"El comprador de la subasta {auction.Id} no tiene billetera.");
             var seller = await _repository.GetWalletAsync(sellerId, cancellationToken) ?? throw new InvalidOperationException($"El vendedor de la subasta {auction.Id} no tiene billetera.");
             var amount = winner.Monto;
-            if (buyer.SaldoRetenido < amount || buyer.SaldoTotal < amount) throw new InvalidOperationException($"La retención del comprador para la subasta {auction.Id} es insuficiente.");
-            if (seller.SaldoTotal > DepositWalletCommandHandler.MaxMoneyAmount - amount || seller.SaldoDisponible > DepositWalletCommandHandler.MaxMoneyAmount - amount) throw new InvalidOperationException($"El crédito de la subasta {auction.Id} supera el límite monetario del vendedor.");
-            var settlement = new LiquidacionSubasta { Id = Guid.NewGuid(), SubastaId = auction.Id, PujaGanadoraId = winner.Id, CompradorId = winner.UsuarioId, VendedorId = sellerId, ImporteFinal = amount, FechaAdjudicacionUtc = now, FechaLiquidacionUtc = now };
-            buyer.SaldoTotal -= amount; buyer.SaldoRetenido -= amount; seller.SaldoTotal += amount; seller.SaldoDisponible += amount; auction.Estado = EstadoSubasta.Finalizada;
+
+            AuctionSettlementRules.TransferirFondos(
+                auction.Id,
+                buyer,
+                seller,
+                amount);
+
+            var settlement = new LiquidacionSubasta
+            {
+                Id = Guid.NewGuid(),
+                SubastaId = auction.Id,
+                PujaGanadoraId = winner.Id,
+                CompradorId = winner.UsuarioId,
+                VendedorId = sellerId,
+                ImporteFinal = amount,
+                FechaAdjudicacionUtc = now,
+                FechaLiquidacionUtc = now
+            };
+
+            auction.Estado = EstadoSubasta.Finalizada;
             _repository.AddSettlement(settlement);
             _repository.AddLedgerTransactions(
                 new TransaccionLedger { Id = Guid.NewGuid(), BilleteraId = buyer.Id, LiquidacionSubastaId = settlement.Id, ClaveIdempotencia = $"auction:settlement:payment:{auction.Id}", Tipo = TipoMovimientoBilletera.Pago, Monto = amount, Descripcion = $"Pago de la liquidación {settlement.Id} por la subasta {auction.Id}.", FechaUtc = now },
