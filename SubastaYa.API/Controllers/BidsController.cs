@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using SubastaYa.Domain.Exceptions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SubastaYa.API.Contracts.Bids;
 using SubastaYa.API.Services;
@@ -8,12 +9,12 @@ using SubastaYa.Application.Features.Bids.DTOs;
 using SubastaYa.Application.Features.Bids.Queries.GetBidHistory;
 using SubastaYa.Application.Features.Bids.Queries.GetRoomState;
 using BidNotFoundException = SubastaYa.Application.Exceptions.BidNotFoundException;
-using BidStateConflictException = SubastaYa.Application.Exceptions.BidStateConflictException;
-using BidForbiddenException = SubastaYa.Application.Exceptions.BidForbiddenException;
+using BidStateConflictException = SubastaYa.Domain.Exceptions.BidStateConflictException;
+using BidForbiddenException = SubastaYa.Domain.Exceptions.BidForbiddenException;
 using BidConcurrencyException = SubastaYa.Application.Exceptions.BidConcurrencyException;
-using BidInsufficientFundsException = SubastaYa.Application.Exceptions.BidInsufficientFundsException;
-using BidValidationException = SubastaYa.Application.Exceptions.BidValidationException;
-using BidRuleException = SubastaYa.Application.Exceptions.BidRuleException;
+using BidInsufficientFundsException = SubastaYa.Domain.Exceptions.BidInsufficientFundsException;
+using BidValidationException = SubastaYa.Domain.Exceptions.BidValidationException;
+using BidRuleException = SubastaYa.Domain.Exceptions.BidRuleException;
 
 namespace SubastaYa.API.Controllers;
 

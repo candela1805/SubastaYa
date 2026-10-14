@@ -1,8 +1,9 @@
-﻿using SubastaYa.Application.Abstractions;
+using SubastaYa.Domain.Exceptions;
+using SubastaYa.Application.Abstractions;
 using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Application.Exceptions;
 using SubastaYa.Application.Features.Bids.DTOs;
-using SubastaYa.Application.Features.Bids.Rules;
+using SubastaYa.Domain.Rules;
 
 namespace SubastaYa.Application.Features.Bids.Queries.GetRoomState;
 

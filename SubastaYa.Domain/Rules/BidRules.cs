@@ -1,7 +1,7 @@
-﻿using SubastaYa.Application.Exceptions;
+using SubastaYa.Domain.Exceptions;
 using SubastaYa.Domain.Models;
 
-namespace SubastaYa.Application.Features.Bids.Rules;
+namespace SubastaYa.Domain.Rules;
 
 public static class BidRules
 {

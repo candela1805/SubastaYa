@@ -1,4 +1,5 @@
-﻿namespace SubastaYa.Application.Exceptions;
+using SubastaYa.Domain.Exceptions;
+namespace SubastaYa.Application.Exceptions;
 
 public sealed class BidAuditException : Exception
 {

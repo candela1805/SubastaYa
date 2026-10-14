@@ -1,4 +1,4 @@
-namespace SubastaYa.Application.Exceptions;
+namespace SubastaYa.Domain.Exceptions;
 
 public abstract class BidRuleException : Exception
 {
