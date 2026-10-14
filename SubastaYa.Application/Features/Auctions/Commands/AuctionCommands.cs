@@ -23,17 +23,26 @@ public sealed class AuctionValidationException : Exception
 
 public static class AuctionCreationRules
 {
-    public const string TitleRequired = "El título es obligatorio.";
-    public const string DescriptionRequired = "La descripción es obligatoria.";
-    public const string CategoryRequired = "La categoría es obligatoria.";
+    public const string TitleRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.TitleRequired;
+
+    public const string DescriptionRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.DescriptionRequired;
+
+    public const string CategoryRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.CategoryRequired;
+
     public const string InitialPriceMustBePositive =
-        "El precio inicial debe ser mayor a 0.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.InitialPriceMustBePositive;
+
     public const string MinimumIncrementMustBePositive =
-        "El incremento mínimo debe ser mayor a 0.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.MinimumIncrementMustBePositive;
+
     public const string EndDateMustBeAfterStartDate =
-        "La fecha de finalización debe ser posterior a la fecha de inicio.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.EndDateMustBeAfterStartDate;
+
     public const string EndDateMustBeFuture =
-        "La fecha de finalización debe ser futura.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.EndDateMustBeFuture;
 }
 
 public sealed class CreateAuctionCommandHandler : ICommandHandler<CreateAuctionCommand, AuctionResult>
@@ -67,38 +76,26 @@ public sealed class CreateAuctionCommandHandler : ICommandHandler<CreateAuctionC
     }
 
     private static void Validate(
-        CreateAuctionCommand command,
-        DateTimeOffset now)
+    CreateAuctionCommand command,
+    DateTimeOffset now)
     {
-        if (string.IsNullOrWhiteSpace(command.Title))
-            throw new AuctionValidationException(
-                AuctionCreationRules.TitleRequired);
-
-        if (string.IsNullOrWhiteSpace(command.Description))
-            throw new AuctionValidationException(
-                AuctionCreationRules.DescriptionRequired);
-
-        if (string.IsNullOrWhiteSpace(command.Category))
-            throw new AuctionValidationException(
-                AuctionCreationRules.CategoryRequired);
-
-        if (command.InitialPrice <= 0)
-            throw new AuctionValidationException(
-                AuctionCreationRules.InitialPriceMustBePositive);
-
-        if (command.MinimumIncrement <= 0)
-            throw new AuctionValidationException(
-                AuctionCreationRules.MinimumIncrementMustBePositive);
-
-        if (command.EndDateUtc <= command.StartDateUtc)
-            throw new AuctionValidationException(
-                AuctionCreationRules.EndDateMustBeAfterStartDate);
-
-        if (command.EndDateUtc <= now)
-            throw new AuctionValidationException(
-                AuctionCreationRules.EndDateMustBeFuture);
+        try
+        {
+            SubastaYa.Domain.Rules.AuctionCreationRules.Validar(
+                command.Title,
+                command.Description,
+                command.Category,
+                command.InitialPrice,
+                command.MinimumIncrement,
+                command.StartDateUtc,
+                command.EndDateUtc,
+                now);
+        }
+        catch (SubastaYa.Domain.Exceptions.AuctionCreationRuleException ex)
+        {
+            throw new AuctionValidationException(ex.Message);
+        }
     }
-
     internal static AuctionResult Map(Subasta auction) => new(auction.Id, auction.Titulo, auction.Descripcion ?? string.Empty, auction.ImagenUrl, auction.Categoria, auction.PrecioInicial, auction.PrecioActual, auction.IncrementoMinimo, auction.FechaInicioUtc, auction.FechaFinUtc, auction.Estado);
 }
 
