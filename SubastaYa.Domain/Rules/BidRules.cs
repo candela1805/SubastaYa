@@ -21,6 +21,17 @@ public static class BidRules
 
         return subasta.PrecioActual + subasta.IncrementoMinimo;
     }
+    public static void ValidarPujaMinima(Subasta subasta, decimal monto)
+    {
+        var montoMinimo = CalcularPujaMinima(subasta);
+
+        if (monto < montoMinimo)
+        {
+            throw new BidValidationException(
+                "BID_BELOW_MINIMUM",
+                $"La puja m\u00EDnima es de {montoMinimo:F2}.");
+        }
+    }
 
     public static decimal ValidarMonto(decimal? montoSolicitado)
     {
