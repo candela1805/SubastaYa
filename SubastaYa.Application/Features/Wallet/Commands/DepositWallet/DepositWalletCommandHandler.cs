@@ -3,13 +3,15 @@ using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Application.Features.Wallet.DTOs;
 using SubastaYa.Domain.Models;
 using System.Runtime.ExceptionServices;
+using SubastaYa.Domain.Exceptions;
+using SubastaYa.Domain.Rules;
 
 namespace SubastaYa.Application.Features.Wallet.Commands.DepositWallet;
 
 public sealed class DepositWalletCommandHandler
     : ICommandHandler<DepositWalletCommand, WalletBalanceResult?>
 {
-    public const decimal MaxMoneyAmount = 9_999_999_999_999_999.99m;
+    public const decimal MaxMoneyAmount = WalletDepositRules.MaxMoneyAmount;
     public const int MaxIdempotencyKeyLength = 100;
     private readonly IWalletRepository _repository;
     private readonly TimeProvider _timeProvider;
@@ -60,16 +62,21 @@ public sealed class DepositWalletCommandHandler
                 }
             }
 
-            if (wallet.SaldoTotal > MaxMoneyAmount - command.Amount ||
-                wallet.SaldoDisponible > MaxMoneyAmount - command.Amount)
+            try
             {
-                throw new WalletLimitExceededException(
-                    "El depósito supera el límite monetario permitido para la billetera.");
+                WalletDepositRules.Depositar(wallet, command.Amount);
+            }
+            catch (WalletDepositRuleException ex)
+            {
+                if (ex.IsLimitExceeded)
+                {
+                    throw new WalletLimitExceededException(ex.Message);
+                }
+
+                throw new WalletValidationException(ex.Message);
             }
 
             var now = _timeProvider.GetUtcNow();
-            wallet.SaldoTotal += command.Amount;
-            wallet.SaldoDisponible += command.Amount;
             var movement = new TransaccionLedger
             {
                 Id = Guid.NewGuid(),
@@ -143,17 +150,19 @@ public sealed class DepositWalletCommandHandler
 
     private static void Validate(DepositWalletCommand command)
     {
-        if (command.Amount <= 0)
-            throw new WalletValidationException(
-                "El monto del depósito debe ser mayor a 0.");
+        try
+        {
+            WalletDepositRules.ValidarMonto(command.Amount);
+        }
+        catch (WalletDepositRuleException ex)
+        {
+            if (ex.IsLimitExceeded)
+            {
+                throw new WalletLimitExceededException(ex.Message);
+            }
 
-        if (decimal.Round(command.Amount, 2) != command.Amount)
-            throw new WalletValidationException(
-                "El monto del depósito debe tener como máximo dos decimales.");
-
-        if (command.Amount > MaxMoneyAmount)
-            throw new WalletLimitExceededException(
-                "El depósito supera el límite monetario permitido para la billetera.");
+            throw new WalletValidationException(ex.Message);
+        }
 
         if (command.IdempotencyKey is not null &&
             string.IsNullOrWhiteSpace(command.IdempotencyKey))
@@ -163,8 +172,10 @@ public sealed class DepositWalletCommandHandler
         }
 
         if (command.IdempotencyKey?.Trim().Length > MaxIdempotencyKeyLength)
+        {
             throw new WalletValidationException(
                 $"La clave de idempotencia no puede superar {MaxIdempotencyKeyLength} caracteres.");
+        }
     }
 
     private static string? NormalizeIdempotencyKey(
