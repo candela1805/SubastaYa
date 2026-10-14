@@ -28,6 +28,9 @@ using SubastaYa.Application.Features.Wallet.Queries;
 using SubastaYa.Application.Features.Auctions.Commands;
 using SubastaYa.Application.Features.Auctions.DTOs;
 using SubastaYa.Application.Features.Auctions.Queries;
+using SubastaYa.Application.Abstractions.Security;
+using SubastaYa.Application.Features.Auth;
+using SubastaYa.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +43,15 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter());
     });
+builder.Services.AddScoped<IPasswordService, IdentityPasswordService>();
+
+builder.Services.AddScoped<
+    ICommandHandler<RegisterUserCommand, AuthResult>,
+    RegisterUserHandler>();
+
+builder.Services.AddScoped<
+    ICommandHandler<LoginUserCommand, AuthResult?>,
+    LoginUserHandler>();
 builder.Services.AddScoped<
     IQueryHandler<GetUserProfileQuery, UserProfileResult?>,
     GetUserProfileHandler>();
