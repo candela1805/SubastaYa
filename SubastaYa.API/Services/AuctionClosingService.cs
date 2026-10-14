@@ -5,7 +5,7 @@ using ClosingResult =
 
 namespace SubastaYa.API.Services;
 
-// Adaptador para consumidores que todavía usan IAuctionClosingService.
+// Adaptador para consumidores que usan IAuctionClosingService.
 public sealed class AuctionClosingService : IAuctionClosingService
 {
     private readonly ICommandHandler<CloseAuctionCommand, ClosingResult> _handler;
