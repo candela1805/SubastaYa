@@ -1,8 +1,9 @@
-﻿using SubastaYa.Application.Abstractions;
+using SubastaYa.Domain.Exceptions;
+using SubastaYa.Application.Abstractions;
 using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Application.Features.Bids.DTOs;
 using SubastaYa.Application.Exceptions;
-using SubastaYa.Application.Features.Bids.Rules;
+using SubastaYa.Domain.Rules;
 using SubastaYa.Domain.Models;
 using SubastaYa.Application.Abstractions.Notifications;
 using SubastaYa.Application.Abstractions.Auditing;
@@ -201,14 +202,7 @@ public sealed class PlaceBidCommandHandler
             command.UsuarioId,
             ahora);
 
-        var montoMinimo = BidRules.CalcularPujaMinima(subasta);
-
-        if (monto < montoMinimo)
-        {
-            throw new BidValidationException(
-                "BID_BELOW_MINIMUM",
-                $"La puja mínima es de {montoMinimo:F2}.");
-        }
+        BidRules.ValidarPujaMinima(subasta, monto);
 
         return (subasta, monto);
     }

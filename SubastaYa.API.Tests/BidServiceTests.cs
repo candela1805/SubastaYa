@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using SubastaYa.API.Contracts.Bids;
-using SubastaYa.Domain.Models;
-using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
 using SubastaYa.Application.Exceptions;
 using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
+using SubastaYa.Domain.Exceptions;
+using SubastaYa.Domain.Models;
 
 namespace SubastaYa.API.Tests;
 
@@ -30,6 +29,7 @@ public sealed class BidServiceTests
                 110m));
 
         await using var verification = database.CreateContext();
+
         var auction = await verification.Subastas.SingleAsync();
         var wallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
@@ -57,9 +57,11 @@ public sealed class BidServiceTests
     public async Task Higher_bid_releases_previous_balance_and_freezes_new_balance_atomically()
     {
         await using var database = await BidTestDatabase.CreateAsync();
+
         await database.SeedLeadingBidAsync(
             BidTestDatabase.BidderOneId,
             110m);
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -76,6 +78,7 @@ public sealed class BidServiceTests
                 130m));
 
         await using var verification = database.CreateContext();
+
         var previousWallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
         var newWallet = await verification.Billeteras.SingleAsync(
@@ -89,24 +92,34 @@ public sealed class BidServiceTests
         Assert.Equal(870m, newWallet.SaldoDisponible);
         Assert.Equal(2, bids.Count);
         Assert.Single(bids, bid => bid.EsGanadora);
+
         Assert.Equal(
             BidTestDatabase.BidderTwoId,
             bids.Single(bid => bid.EsGanadora).UsuarioId);
+
         Assert.Contains(
             ledgers,
             item => item.Tipo == TipoMovimientoBilletera.Liberacion &&
                 item.Monto == 110m &&
                 item.BilleteraId == BidTestDatabase.BidderOneWalletId);
+
         Assert.Contains(
             ledgers,
             item => item.Tipo == TipoMovimientoBilletera.Retencion &&
                 item.Monto == 130m &&
                 item.BilleteraId == BidTestDatabase.BidderTwoWalletId);
-        Assert.Contains(response.Id.ToString(), ledgers.Single(
-            item => item.Tipo == TipoMovimientoBilletera.Liberacion).Descripcion);
+
+        Assert.Contains(
+            response.Id.ToString(),
+            ledgers.Single(
+                item => item.Tipo == TipoMovimientoBilletera.Liberacion)
+                .Descripcion);
+
         Assert.Single(
-            await verification.AuditoriaLogs.Where(
-                item => item.TipoEvento == "BidPlaced").ToListAsync());
+            await verification.AuditoriaLogs
+                .Where(item => item.TipoEvento == "BidPlaced")
+                .ToListAsync());
+
         Assert.Equal(1, notifier.NotificationCount);
     }
 
@@ -114,9 +127,11 @@ public sealed class BidServiceTests
     public async Task Current_leader_only_freezes_the_difference()
     {
         await using var database = await BidTestDatabase.CreateAsync();
+
         await database.SeedLeadingBidAsync(
             BidTestDatabase.BidderOneId,
             110m);
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -133,6 +148,7 @@ public sealed class BidServiceTests
                 130m));
 
         await using var verification = database.CreateContext();
+
         var wallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
         var ledgers = await verification.TransaccionLedgers.ToListAsync();
@@ -140,13 +156,16 @@ public sealed class BidServiceTests
 
         Assert.Equal(130m, wallet.SaldoRetenido);
         Assert.Equal(870m, wallet.SaldoDisponible);
+
         Assert.Contains(
             ledgers,
             item => item.Tipo == TipoMovimientoBilletera.Retencion &&
                 item.Monto == 20m);
+
         Assert.DoesNotContain(
             ledgers,
             item => item.Tipo == TipoMovimientoBilletera.Liberacion);
+
         Assert.Equal(2, bids.Count);
         Assert.Single(bids, bid => bid.EsGanadora);
         Assert.Equal(130m, bids.Single(bid => bid.EsGanadora).Monto);
@@ -158,6 +177,7 @@ public sealed class BidServiceTests
     {
         await using var database = await BidTestDatabase.CreateAsync(
             bidderOneBalance: 109m);
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -289,6 +309,7 @@ public sealed class BidServiceTests
     {
         await using var database = await BidTestDatabase.CreateAsync(
             auctionState: EstadoSubasta.Finalizada);
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -315,6 +336,7 @@ public sealed class BidServiceTests
     {
         await using var database = await BidTestDatabase.CreateAsync(
             remaining: TimeSpan.FromSeconds(-1));
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -346,7 +368,9 @@ public sealed class BidServiceTests
     {
         await using var database = await BidTestDatabase.CreateAsync(
             TimeSpan.FromSeconds(remainingSeconds));
+
         var originalEnd = database.Now.AddSeconds(remainingSeconds);
+
         await using var context = database.CreateContext();
 
         var notifier = new FakeBidNotifier();
@@ -363,9 +387,11 @@ public sealed class BidServiceTests
                 110m));
 
         await using var verification = database.CreateContext();
+
         var auction = await verification.Subastas.SingleAsync();
         var extensionAudits = await verification.AuditoriaLogs.CountAsync(
             item => item.TipoEvento == "AuctionExtended");
+
         var expectedEnd = shouldExtend
             ? originalEnd.AddMinutes(2)
             : originalEnd;
@@ -381,6 +407,7 @@ public sealed class BidServiceTests
     public async Task Database_failure_rolls_back_bid_balances_ledger_and_audit()
     {
         await using var database = await BidTestDatabase.CreateAsync();
+
         await using (var setup = database.CreateContext())
         {
             await setup.Database.ExecuteSqlRawAsync(
@@ -410,8 +437,9 @@ public sealed class BidServiceTests
                     110m)));
 
         await AssertDatabaseUnchangedAsync(
-        database,
-        expectRejectionAudit: false);
+            database,
+            expectRejectionAudit: false);
+
         Assert.Equal(0, notifier.NotificationCount);
     }
 
@@ -419,6 +447,7 @@ public sealed class BidServiceTests
     public async Task Failure_after_releasing_leader_rolls_back_the_whole_bid()
     {
         await using var database = await BidTestDatabase.CreateAsync();
+
         await database.SeedLeadingBidAsync(
             BidTestDatabase.BidderOneId,
             110m);
@@ -444,20 +473,24 @@ public sealed class BidServiceTests
 
         await using var repositoryScope = repository;
 
-        await Assert.ThrowsAsync<DbUpdateException>(() =>
-            handler.HandleAsync(
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => handler.HandleAsync(
                 new PlaceBidCommand(
                     BidTestDatabase.AuctionId,
                     BidTestDatabase.BidderTwoId,
                     120m)));
 
         await using var verification = database.CreateContext();
+
         var auction = await verification.Subastas.SingleAsync();
         var originalLeader = await verification.Pujas.SingleAsync();
+
         var originalWallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderOneId);
+
         var challengerWallet = await verification.Billeteras.SingleAsync(
             item => item.UsuarioId == BidTestDatabase.BidderTwoId);
+
         var ledger = await verification.TransaccionLedgers.ToListAsync();
 
         Assert.Equal(110m, auction.PrecioActual);
@@ -476,9 +509,9 @@ public sealed class BidServiceTests
     }
 
     private static async Task AssertDatabaseUnchangedAsync(
-    BidTestDatabase database,
-    decimal bidderOneBalance = 1_000m,
-    bool expectRejectionAudit = true)
+        BidTestDatabase database,
+        decimal bidderOneBalance = 1_000m,
+        bool expectRejectionAudit = true)
     {
         await using var verification = database.CreateContext();
 
@@ -495,11 +528,11 @@ public sealed class BidServiceTests
         Assert.Equal(0m, wallet.SaldoRetenido);
         Assert.Equal(bidderOneBalance, wallet.SaldoDisponible);
 
-        // No deben generarse pujas ni movimientos económicos.
+        // No deben generarse pujas ni movimientos de saldo.
         Assert.Empty(await verification.Pujas.ToListAsync());
         Assert.Empty(await verification.TransaccionLedgers.ToListAsync());
 
-        // Los rechazos SÍ deben quedar auditados.
+        // Los rechazos deben quedar auditados.
         var auditorias = await verification.AuditoriaLogs
             .AsNoTracking()
             .ToListAsync();
@@ -517,7 +550,7 @@ public sealed class BidServiceTests
         {
             Assert.Equal("BidRejected", auditoria.TipoEvento);
             Assert.False(string.IsNullOrWhiteSpace(auditoria.Detalle));
-            Assert.Contains("Código:", auditoria.Detalle);
+            Assert.Contains("C\u00F3digo:", auditoria.Detalle);
         });
     }
 }

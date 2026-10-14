@@ -1,10 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Contracts.Auth;
-using SubastaYa.Infrastructure.Data;
-using SubastaYa.Domain.Models;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Auth;
 
 namespace SubastaYa.API.Controllers;
 
@@ -12,15 +10,18 @@ namespace SubastaYa.API.Controllers;
 [Route("api/auth")]
 public sealed class AuthController : ControllerBase
 {
-    private readonly ApplicationDbContext _dbContext;
-    private readonly IPasswordHasher<Usuario> _passwordHasher;
+    private readonly ICommandHandler<
+        RegisterUserCommand, AuthResult> _registerHandler;
+
+    private readonly ICommandHandler<
+        LoginUserCommand, AuthResult?> _loginHandler;
 
     public AuthController(
-        ApplicationDbContext dbContext,
-        IPasswordHasher<Usuario> passwordHasher)
+        ICommandHandler<RegisterUserCommand, AuthResult> registerHandler,
+        ICommandHandler<LoginUserCommand, AuthResult?> loginHandler)
     {
-        _dbContext = dbContext;
-        _passwordHasher = passwordHasher;
+        _registerHandler = registerHandler;
+        _loginHandler = loginHandler;
     }
 
     [AllowAnonymous]
@@ -29,74 +30,27 @@ public sealed class AuthController : ControllerBase
         RegisterRequest request,
         CancellationToken cancellationToken)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-        var nombre = request.Nombre.Trim();
-
-        if (string.IsNullOrWhiteSpace(nombre))
-        {
-            return BadRequest(new
-            {
-                message = "El nombre es obligatorio."
-            });
-        }
-
-        var emailExists = await _dbContext.Usuarios
-            .AnyAsync(
-                usuario => usuario.Email == email,
-                cancellationToken);
-
-        if (emailExists)
-        {
-            return Conflict(new
-            {
-                message = "Ya existe un usuario registrado con ese email."
-            });
-        }
-
-        var usuario = new Usuario
-        {
-            Id = Guid.NewGuid(),
-            Nombre = nombre,
-            Email = email,
-            FechaRegistro = DateTimeOffset.UtcNow
-        };
-
-        usuario.PasswordHash =
-            _passwordHasher.HashPassword(
-                usuario,
-                request.Password);
-
-        usuario.Billetera = new Billetera
-        {
-            UsuarioId = usuario.Id,
-            Usuario = usuario,
-            SaldoTotal = 0,
-            SaldoRetenido = 0,
-            SaldoDisponible = 0
-        };
-
-        _dbContext.Usuarios.Add(usuario);
-
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            return Conflict(new
-            {
-                message = "No se pudo crear el usuario. El email podrÃ­a estar registrado."
-            });
-        }
+            var result = await _registerHandler.HandleAsync(
+                new RegisterUserCommand(
+                    request.Nombre,
+                    request.Email,
+                    request.Password),
+                cancellationToken);
 
-        return StatusCode(
-            StatusCodes.Status201Created,
-            new AuthResponse
-            {
-                UserId = usuario.Id,
-                Nombre = usuario.Nombre,
-                Email = usuario.Email
-            });
+            return StatusCode(
+                StatusCodes.Status201Created,
+                MapearRespuesta(result));
+        }
+        catch (AuthValidationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (AuthConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     [AllowAnonymous]
@@ -105,63 +59,30 @@ public sealed class AuthController : ControllerBase
         LoginRequest request,
         CancellationToken cancellationToken)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
+        var result = await _loginHandler.HandleAsync(
+            new LoginUserCommand(
+                request.Email,
+                request.Password),
+            cancellationToken);
 
-        var usuario = await _dbContext.Usuarios
-            .SingleOrDefaultAsync(
-                usuario => usuario.Email == email,
-                cancellationToken);
-
-        if (usuario is null)
+        if (result is null)
         {
             return Unauthorized(new
             {
-                message = "Email o contraseÃ±a incorrectos."
+                message = "Email o contraseña incorrectos."
             });
         }
 
-        PasswordVerificationResult verificationResult;
+        return Ok(MapearRespuesta(result));
+    }
 
-        try
+    private static AuthResponse MapearRespuesta(AuthResult result)
+    {
+        return new AuthResponse
         {
-            verificationResult =
-                _passwordHasher.VerifyHashedPassword(
-                    usuario,
-                    usuario.PasswordHash,
-                    request.Password);
-        }
-        catch (FormatException)
-        {
-            return Unauthorized(new
-            {
-                message = "Email o contraseÃ±a incorrectos."
-            });
-        }
-
-        if (verificationResult == PasswordVerificationResult.Failed)
-        {
-            return Unauthorized(new
-            {
-                message = "Email o contraseÃ±a incorrectos."
-            });
-        }
-
-        if (verificationResult ==
-            PasswordVerificationResult.SuccessRehashNeeded)
-        {
-            usuario.PasswordHash =
-                _passwordHasher.HashPassword(
-                    usuario,
-                    request.Password);
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        return Ok(new AuthResponse
-        {
-            UserId = usuario.Id,
-            Nombre = usuario.Nombre,
-            Email = usuario.Email
-        });
+            UserId = result.UserId,
+            Nombre = result.Nombre,
+            Email = result.Email
+        };
     }
 }

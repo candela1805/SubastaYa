@@ -6,6 +6,10 @@ using SubastaYa.Infrastructure.Data;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
+using SubastaYa.API.Adapters;
+using SubastaYa.Infrastructure.Repositories;
+using CloseHandler =
+    SubastaYa.Application.Features.Auctions.Commands.CloseAuctionCommandHandler;
 
 namespace SubastaYa.API.Tests;
 
@@ -115,14 +119,21 @@ public sealed class AuctionClosingConcurrencyTests
     }
 
     private static AuctionClosingService CreateService(
-        ApplicationDbContext context,
-        TimeProvider clock)
+    ApplicationDbContext context,
+    TimeProvider clock)
     {
-        return new AuctionClosingService(
-            context,
+        var repository = new AuctionClosingRepository(context);
+
+        var notifier = new SignalRAuctionNotifier(
             NoOpHubContext.Instance,
-            clock,
-            NullLogger<AuctionClosingService>.Instance);
+            NullLogger<SignalRAuctionNotifier>.Instance);
+
+        var handler = new CloseHandler(
+            repository,
+            notifier,
+            clock);
+
+        return new AuctionClosingService(handler);
     }
 
     private static async Task SeedAsync(

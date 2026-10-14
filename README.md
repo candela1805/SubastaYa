@@ -466,3 +466,29 @@ dotnet run --project .\SubastaYa.API
 
 Luego servir `SubastaYa.Web` en el puerto 5500. Swagger queda disponible en
 `http://localhost:5000/swagger`.
+
+### Configuración local de desarrollo
+
+Los orígenes del frontend se configuran en Cors:AllowedOrigins,
+dentro de appsettings.Development.json.
+La política CORS se aplica actualmente en Development.
+
+Para configurar la contraseña del seed:
+1. En Visual Studio, hacer clic derecho sobre SubastaYa.API.
+2. Seleccionar Administrar secretos de usuario.
+3. Agregar DevelopmentSeed:Password con una contraseña local.
+
+Cada desarrollador configura su propio valor.
+No guardar contraseñas reales en archivos versionados.
+
+El seed se ejecuta solo en Development cuando
+DevelopmentAuthentication:Enabled es true.
+Si falta la contraseña, se detiene antes de crear datos.
+La contraseña configurada se usa para usuarios nuevos del seed;
+no modifica las contraseñas de usuarios existentes.
+
+Antes de ejecutar la API, aplicar las migraciones pendientes:
+dotnet ef database update --project .\SubastaYa.Infrastructure --startup-project .\SubastaYa.API
+
+User Secrets es para desarrollo local; no es un almacén cifrado
+ni una solución para secretos de producción.

@@ -4,6 +4,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SubastaYa.Infrastructure.Data;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
+using SubastaYa.API.Adapters;
+using SubastaYa.Infrastructure.Repositories;
+using CloseHandler =
+    SubastaYa.Application.Features.Auctions.Commands.CloseAuctionCommandHandler;
 
 namespace SubastaYa.API.Tests.TestInfrastructure;
 
@@ -132,13 +136,20 @@ internal sealed class AuctionClosingTestDatabase : IAsyncDisposable
     public ApplicationDbContext CreateContext() => new(Options);
 
     public AuctionClosingService CreateService(
-        ApplicationDbContext context)
+    ApplicationDbContext context)
     {
-        return new AuctionClosingService(
-            context,
+        var repository = new AuctionClosingRepository(context);
+
+        var notifier = new SignalRAuctionNotifier(
             NoOpHubContext.Instance,
-            Clock,
-            NullLogger<AuctionClosingService>.Instance);
+            NullLogger<SignalRAuctionNotifier>.Instance);
+
+        var handler = new CloseHandler(
+            repository,
+            notifier,
+            Clock);
+
+        return new AuctionClosingService(handler);
     }
 
     public async Task SeedWinningBidAsync(

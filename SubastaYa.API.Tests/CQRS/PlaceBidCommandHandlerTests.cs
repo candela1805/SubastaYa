@@ -1,3 +1,4 @@
+using SubastaYa.Domain.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.API.Tests.TestInfrastructure;
 using SubastaYa.Application.Abstractions.Notifications;

@@ -1,3 +1,77 @@
+// Protección de formularios contra envíos repetidos.
+const pendingFormSubmissions = new WeakSet();
+const protectedSubmissionForms = new WeakSet();
+
+function protectFormSubmission(handler) {
+    return async function (event) {
+        event.preventDefault();
+
+        const form = event.currentTarget;
+        protectedSubmissionForms.add(form);
+
+        if (pendingFormSubmissions.has(form)) {
+            return;
+        }
+
+        const previousBusy = form.getAttribute("aria-busy");
+
+        pendingFormSubmissions.add(form);
+        form.setAttribute("aria-busy", "true");
+
+        try {
+            await handler.call(this, event);
+        } finally {
+            pendingFormSubmissions.delete(form);
+
+            if (previousBusy === null) {
+                form.removeAttribute("aria-busy");
+            } else {
+                form.setAttribute("aria-busy", previousBusy);
+            }
+
+            if (form.id === "bid-form") {
+                updateAuctionAvailability();
+            } else if (form.matches("[data-deposit-form]")) {
+                updateDepositButton(form);
+            }
+        }
+    };
+}
+
+document.addEventListener("click", event => {
+    const control = event.target.closest?.("button, input");
+    const form = control?.form;
+
+    if (!form || !protectedSubmissionForms.has(form)) {
+        return;
+    }
+
+    if (!["submit", "image"].includes(control.type)) {
+        return;
+    }
+
+    if (pendingFormSubmissions.has(form) || event.detail > 1) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+}, true);
+
+document.addEventListener("keydown", event => {
+    if (event.key !== "Enter") {
+        return;
+    }
+
+    const form = event.target.form;
+
+    if (!form || !protectedSubmissionForms.has(form)) {
+        return;
+    }
+
+    if (pendingFormSubmissions.has(form) || event.repeat) {
+        event.preventDefault();
+    }
+}, true);
+
 const API_BASE_URL = "http://localhost:5000";
 const SESSION_STORAGE_KEY =
     "subastaya_session";
@@ -511,7 +585,7 @@ function configureLiveRoom() {
         )
     });
 
-    document.getElementById("bid-form").addEventListener("submit", placeBid);
+    document.getElementById("bid-form").addEventListener("submit", protectFormSubmission(placeBid));
 }
 
 async function enterLiveRoom(auctionId) {
@@ -715,7 +789,9 @@ function renderBidInteraction(auctionIsActive = canOpenAuction(activeAuction)) {
     const form = document.getElementById("bid-form");
     const input = document.getElementById("bid-amount");
     const button = document.getElementById("place-bid-button");
-    const submitting = Boolean(bidSubmissionCoordinator?.isSubmitting) ||
+    const submitting =
+        pendingFormSubmissions.has(form) ||
+        Boolean(bidSubmissionCoordinator?.isSubmitting) ||
         bidUiState.phase === "submitting";
     const loading = ["loading", "refreshing"].includes(bidUiState.phase);
     const controlsDisabled =
@@ -1690,7 +1766,7 @@ function configureWallet() {
     document.querySelectorAll("[data-deposit-form]").forEach(form => {
         populatePaymentSelect(form.elements.metodo);
         renderPaymentFlow(form);
-        form.addEventListener("submit", submitWalletDeposit);
+        form.addEventListener("submit", protectFormSubmission(submitWalletDeposit));
         form.elements.monto.addEventListener("input", () => {
             updatePaymentFlowAmount(form);
             updateDepositButton(form);
@@ -1739,15 +1815,19 @@ function populatePaymentSelect(select) {
 function updateDepositButton(form) {
     const amount = Number(form.elements.monto.value);
     const button = form.querySelector("button[type='submit']");
+
     const simulationFields = [
         ...form.querySelectorAll("[data-payment-flow] input[required]")
     ];
-    button.disabled = !(
-        Number.isFinite(amount) &&
-        amount > 0 &&
-        form.elements.metodo.value &&
-        simulationFields.every(input => input.checkValidity())
-    );
+
+    button.disabled =
+        pendingFormSubmissions.has(form) ||
+        !(
+            Number.isFinite(amount) &&
+            amount > 0 &&
+            form.elements.metodo.value &&
+            simulationFields.every(input => input.checkValidity())
+        );
 }
 
 async function submitWalletDeposit(event) {
@@ -2359,13 +2439,13 @@ function configureAuthentication() {
 
     loginForm?.addEventListener(
         "submit",
-        loginUser
+        protectFormSubmission(loginUser)
     );
 
 
     registerForm?.addEventListener(
         "submit",
-        registerUser
+        protectFormSubmission(registerUser)
     );
 
     editProfileButton?.addEventListener(
@@ -2375,7 +2455,7 @@ function configureAuthentication() {
 
     profileForm?.addEventListener(
         "submit",
-        updateUserProfile
+        protectFormSubmission(updateUserProfile)
     );
 
 
@@ -2936,7 +3016,7 @@ function configureAuctionCreation() {
         ).show();
     });
 
-    form.addEventListener("submit", createAuction);
+    form.addEventListener("submit", protectFormSubmission(createAuction));
 }
 
 function setAuctionFormDates(form) {
@@ -3063,7 +3143,7 @@ function configureActivities() {
 
     document.getElementById("edit-auction-form").addEventListener(
         "submit",
-        updatePublication
+        protectFormSubmission(updatePublication)
     );
     document.getElementById("confirm-delete-auction").addEventListener(
         "click",

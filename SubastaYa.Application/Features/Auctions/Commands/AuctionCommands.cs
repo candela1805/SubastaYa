@@ -3,6 +3,8 @@ using SubastaYa.Application.Abstractions.Notifications;
 using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Application.Features.Auctions.DTOs;
 using SubastaYa.Domain.Models;
+using SubastaYa.Domain.Exceptions;
+using SubastaYa.Domain.Rules;
 
 namespace SubastaYa.Application.Features.Auctions.Commands;
 
@@ -23,17 +25,26 @@ public sealed class AuctionValidationException : Exception
 
 public static class AuctionCreationRules
 {
-    public const string TitleRequired = "El título es obligatorio.";
-    public const string DescriptionRequired = "La descripción es obligatoria.";
-    public const string CategoryRequired = "La categoría es obligatoria.";
+    public const string TitleRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.TitleRequired;
+
+    public const string DescriptionRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.DescriptionRequired;
+
+    public const string CategoryRequired =
+        SubastaYa.Domain.Rules.AuctionCreationRules.CategoryRequired;
+
     public const string InitialPriceMustBePositive =
-        "El precio inicial debe ser mayor a 0.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.InitialPriceMustBePositive;
+
     public const string MinimumIncrementMustBePositive =
-        "El incremento mínimo debe ser mayor a 0.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.MinimumIncrementMustBePositive;
+
     public const string EndDateMustBeAfterStartDate =
-        "La fecha de finalización debe ser posterior a la fecha de inicio.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.EndDateMustBeAfterStartDate;
+
     public const string EndDateMustBeFuture =
-        "La fecha de finalización debe ser futura.";
+        SubastaYa.Domain.Rules.AuctionCreationRules.EndDateMustBeFuture;
 }
 
 public sealed class CreateAuctionCommandHandler : ICommandHandler<CreateAuctionCommand, AuctionResult>
@@ -67,92 +78,233 @@ public sealed class CreateAuctionCommandHandler : ICommandHandler<CreateAuctionC
     }
 
     private static void Validate(
-        CreateAuctionCommand command,
-        DateTimeOffset now)
+    CreateAuctionCommand command,
+    DateTimeOffset now)
     {
-        if (string.IsNullOrWhiteSpace(command.Title))
-            throw new AuctionValidationException(
-                AuctionCreationRules.TitleRequired);
-
-        if (string.IsNullOrWhiteSpace(command.Description))
-            throw new AuctionValidationException(
-                AuctionCreationRules.DescriptionRequired);
-
-        if (string.IsNullOrWhiteSpace(command.Category))
-            throw new AuctionValidationException(
-                AuctionCreationRules.CategoryRequired);
-
-        if (command.InitialPrice <= 0)
-            throw new AuctionValidationException(
-                AuctionCreationRules.InitialPriceMustBePositive);
-
-        if (command.MinimumIncrement <= 0)
-            throw new AuctionValidationException(
-                AuctionCreationRules.MinimumIncrementMustBePositive);
-
-        if (command.EndDateUtc <= command.StartDateUtc)
-            throw new AuctionValidationException(
-                AuctionCreationRules.EndDateMustBeAfterStartDate);
-
-        if (command.EndDateUtc <= now)
-            throw new AuctionValidationException(
-                AuctionCreationRules.EndDateMustBeFuture);
+        try
+        {
+            SubastaYa.Domain.Rules.AuctionCreationRules.Validar(
+                command.Title,
+                command.Description,
+                command.Category,
+                command.InitialPrice,
+                command.MinimumIncrement,
+                command.StartDateUtc,
+                command.EndDateUtc,
+                now);
+        }
+        catch (SubastaYa.Domain.Exceptions.AuctionCreationRuleException ex)
+        {
+            throw new AuctionValidationException(ex.Message);
+        }
     }
-
     internal static AuctionResult Map(Subasta auction) => new(auction.Id, auction.Titulo, auction.Descripcion ?? string.Empty, auction.ImagenUrl, auction.Categoria, auction.PrecioInicial, auction.PrecioActual, auction.IncrementoMinimo, auction.FechaInicioUtc, auction.FechaFinUtc, auction.Estado);
 }
 
-public sealed class UpdateAuctionCommandHandler : ICommandHandler<UpdateAuctionCommand, AuctionResult>
+public sealed class UpdateAuctionCommandHandler
+    : ICommandHandler<UpdateAuctionCommand, AuctionResult>
 {
     private readonly IAuctionRepository _repository;
     private readonly TimeProvider _timeProvider;
-    public UpdateAuctionCommandHandler(IAuctionRepository repository, TimeProvider timeProvider) { _repository = repository; _timeProvider = timeProvider; }
-    public async Task<AuctionResult> HandleAsync(UpdateAuctionCommand command, CancellationToken cancellationToken = default)
+
+    public UpdateAuctionCommandHandler(
+        IAuctionRepository repository,
+        TimeProvider timeProvider)
     {
-        var auction = await _repository.GetOwnedTrackedAsync(command.AuctionId, command.SellerId, cancellationToken) ?? throw new KeyNotFoundException("La publicación no existe o no pertenece al usuario autenticado.");
-        if (auction.Estado is EstadoSubasta.Finalizada or EstadoSubasta.Desierta) throw new AuctionOperationConflictException("Las publicaciones finalizadas o desiertas no pueden editarse.");
-        if (await _repository.HasBidsAsync(command.AuctionId, cancellationToken)) throw new AuctionOperationConflictException("La publicación no puede editarse porque ya recibió pujas.");
-        if (command.EndDateUtc <= _timeProvider.GetUtcNow() || command.EndDateUtc <= auction.FechaInicioUtc) throw new AuctionOperationConflictException("La fecha de finalización debe ser futura y posterior al inicio.");
-        auction.Titulo = command.Title.Trim(); auction.Descripcion = command.Description.Trim(); auction.Categoria = command.Category.Trim();
-        auction.ImagenUrl = string.IsNullOrWhiteSpace(command.ImageUrl) ? null : command.ImageUrl.Trim(); auction.FechaFinUtc = command.EndDateUtc;
-        _repository.AddAudit(new AuditoriaLog { Id = Guid.NewGuid(), SubastaId = auction.Id, TipoEvento = "AuctionUpdated", Detalle = "La publicación fue actualizada por su vendedor.", FechaUtc = _timeProvider.GetUtcNow() });
-        try { await _repository.SaveChangesAsync(cancellationToken); }
-        catch (AuctionPersistenceConcurrencyException ex) { throw new AuctionOperationConflictException("La publicación cambió durante la edición. Actualizá los datos e intentá nuevamente.", ex); }
+        _repository = repository;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<AuctionResult> HandleAsync(
+        UpdateAuctionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var auction = await _repository.GetOwnedTrackedAsync(
+            command.AuctionId,
+            command.SellerId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException(
+                "La publicación no existe o no pertenece al usuario autenticado.");
+
+        try
+        {
+            AuctionPublicationRules.ValidarEstadoParaEditar(auction);
+
+            var tienePujas = await _repository.HasBidsAsync(
+                command.AuctionId,
+                cancellationToken);
+
+            AuctionPublicationRules.ValidarEdicion(
+                auction,
+                tienePujas,
+                command.EndDateUtc,
+                _timeProvider.GetUtcNow());
+        }
+        catch (AuctionPublicationRuleException ex)
+        {
+            throw new AuctionOperationConflictException(ex.Message, ex);
+        }
+
+        auction.Titulo = command.Title.Trim();
+        auction.Descripcion = command.Description.Trim();
+        auction.Categoria = command.Category.Trim();
+        auction.ImagenUrl = string.IsNullOrWhiteSpace(command.ImageUrl)
+            ? null
+            : command.ImageUrl.Trim();
+        auction.FechaFinUtc = command.EndDateUtc;
+
+        _repository.AddAudit(new AuditoriaLog
+        {
+            Id = Guid.NewGuid(),
+            SubastaId = auction.Id,
+            TipoEvento = "AuctionUpdated",
+            Detalle = "La publicación fue actualizada por su vendedor.",
+            FechaUtc = _timeProvider.GetUtcNow()
+        });
+
+        try
+        {
+            await _repository.SaveChangesAsync(cancellationToken);
+        }
+        catch (AuctionPersistenceConcurrencyException ex)
+        {
+            throw new AuctionOperationConflictException(
+                "La publicación cambió durante la edición. Actualizá los datos e intentá nuevamente.",
+                ex);
+        }
+
         return CreateAuctionCommandHandler.Map(auction);
     }
 }
 
-public sealed class DeleteAuctionCommandHandler : ICommandHandler<DeleteAuctionCommand, bool>
+public sealed class DeleteAuctionCommandHandler
+    : ICommandHandler<DeleteAuctionCommand, bool>
 {
     private readonly IAuctionRepository _repository;
-    public DeleteAuctionCommandHandler(IAuctionRepository repository) => _repository = repository;
-    public async Task<bool> HandleAsync(DeleteAuctionCommand command, CancellationToken cancellationToken = default)
+
+    public DeleteAuctionCommandHandler(IAuctionRepository repository)
     {
-        var auction = await _repository.GetOwnedTrackedAsync(command.AuctionId, command.SellerId, cancellationToken) ?? throw new KeyNotFoundException("La publicación no existe o no pertenece al usuario autenticado.");
-        if (await _repository.HasBidsAsync(command.AuctionId, cancellationToken)) throw new AuctionOperationConflictException("Esta publicación no puede eliminarse porque ya recibió una puja.");
-        if (await _repository.HasSettlementAsync(command.AuctionId, cancellationToken)) throw new AuctionOperationConflictException("Esta publicación no puede eliminarse porque tiene una liquidación asociada.");
-        if (await _repository.HasAuditAsync(command.AuctionId, cancellationToken)) throw new AuctionOperationConflictException("Esta publicación no puede eliminarse porque posee historial de auditoría inmutable.");
+        _repository = repository;
+    }
+
+    public async Task<bool> HandleAsync(
+        DeleteAuctionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var auction = await _repository.GetOwnedTrackedAsync(
+            command.AuctionId,
+            command.SellerId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException(
+                "La publicación no existe o no pertenece al usuario autenticado.");
+
+        var tienePujas = await _repository.HasBidsAsync(
+            command.AuctionId,
+            cancellationToken);
+
+        var tieneLiquidacion = false;
+        var tieneAuditoria = false;
+
+        if (!tienePujas)
+        {
+            tieneLiquidacion = await _repository.HasSettlementAsync(
+                command.AuctionId,
+                cancellationToken);
+
+            if (!tieneLiquidacion)
+            {
+                tieneAuditoria = await _repository.HasAuditAsync(
+                    command.AuctionId,
+                    cancellationToken);
+            }
+        }
+
+        try
+        {
+            AuctionPublicationRules.ValidarEliminacion(
+                tienePujas,
+                tieneLiquidacion,
+                tieneAuditoria);
+        }
+        catch (AuctionPublicationRuleException ex)
+        {
+            throw new AuctionOperationConflictException(ex.Message, ex);
+        }
+
         _repository.Remove(auction);
-        try { await _repository.SaveChangesAsync(cancellationToken); }
-        catch (AuctionPersistenceConcurrencyException ex) { throw new AuctionOperationConflictException("La publicación cambió durante la eliminación. Actualizá los datos e intentá nuevamente.", ex); }
-        catch (AuctionPersistenceException ex) { throw new AuctionOperationConflictException("La publicación generó información histórica y ya no puede eliminarse.", ex); }
+
+        try
+        {
+            await _repository.SaveChangesAsync(cancellationToken);
+        }
+        catch (AuctionPersistenceConcurrencyException ex)
+        {
+            throw new AuctionOperationConflictException(
+                "La publicación cambió durante la eliminación. Actualizá los datos e intentá nuevamente.",
+                ex);
+        }
+        catch (AuctionPersistenceException ex)
+        {
+            throw new AuctionOperationConflictException(
+                "La publicación generó información histórica y ya no puede eliminarse.",
+                ex);
+        }
+
         return true;
     }
 }
 
-public sealed class ActivateAuctionCommandHandler : ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>
+public sealed class ActivateAuctionCommandHandler
+    : ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>
 {
-    private readonly IAuctionRepository _repository; private readonly IAuctionNotifier _notifier; private readonly TimeProvider _timeProvider;
-    public ActivateAuctionCommandHandler(IAuctionRepository repository, IAuctionNotifier notifier, TimeProvider timeProvider) { _repository = repository; _notifier = notifier; _timeProvider = timeProvider; }
-    public async Task<EstadoSubasta?> HandleAsync(ActivateAuctionCommand command, CancellationToken cancellationToken = default)
+    private readonly IAuctionRepository _repository;
+    private readonly IAuctionNotifier _notifier;
+    private readonly TimeProvider _timeProvider;
+
+    public ActivateAuctionCommandHandler(
+        IAuctionRepository repository,
+        IAuctionNotifier notifier,
+        TimeProvider timeProvider)
     {
-        var auction = await _repository.GetTrackedAsync(command.AuctionId, cancellationToken) ?? throw new KeyNotFoundException("La subasta no existe.");
+        _repository = repository;
+        _notifier = notifier;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<EstadoSubasta?> HandleAsync(
+        ActivateAuctionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var auction = await _repository.GetTrackedAsync(
+            command.AuctionId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException("La subasta no existe.");
+
         var now = _timeProvider.GetUtcNow();
-        if (auction.Estado != EstadoSubasta.Programada || auction.FechaInicioUtc > now) return auction.Estado;
-        var previous = auction.Estado; auction.Estado = EstadoSubasta.Activa;
-        _repository.AddAudit(new AuditoriaLog { Id = Guid.NewGuid(), SubastaId = auction.Id, TipoEvento = "AuctionStateChanged", Detalle = $"Estado cambiado de {previous} a {auction.Estado}", FechaUtc = now });
+        var previous = auction.Estado;
+
+        if (!auction.ActivarSiCorresponde(now))
+        {
+            return auction.Estado;
+        }
+
+        _repository.AddAudit(new AuditoriaLog
+        {
+            Id = Guid.NewGuid(),
+            SubastaId = auction.Id,
+            TipoEvento = "AuctionStateChanged",
+            Detalle = $"Estado cambiado de {previous} a {auction.Estado}",
+            FechaUtc = now
+        });
+
         await _repository.SaveChangesAsync(cancellationToken);
-        await _notifier.NotifyStateChangedAsync(auction.Id, auction.Estado, auction.FechaFinUtc, CancellationToken.None);
+
+        await _notifier.NotifyStateChangedAsync(
+            auction.Id,
+            auction.Estado,
+            auction.FechaFinUtc,
+            CancellationToken.None);
+
         return auction.Estado;
     }
 }

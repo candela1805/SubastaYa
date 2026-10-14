@@ -46,4 +46,14 @@ public sealed class Subasta
     // SQL Server genera un nuevo valor en cada INSERT o UPDATE.
     [Timestamp]
     public byte[] Version { get; set; } = Array.Empty<byte>();
+    public bool ActivarSiCorresponde(DateTimeOffset ahora)
+    {
+        if (Estado != EstadoSubasta.Programada || FechaInicioUtc > ahora)
+        {
+            return false;
+        }
+
+        Estado = EstadoSubasta.Activa;
+        return true;
+    }
 }

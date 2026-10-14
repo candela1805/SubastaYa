@@ -1,6 +1,7 @@
-using SubastaYa.API.Data;
-using Microsoft.EntityFrameworkCore;
 using SubastaYa.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using SubastaYa.Application.Abstractions;
+using SubastaYa.Application.Features.Users;
 using System.Text.Json.Serialization;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
@@ -11,7 +12,7 @@ using SubastaYa.API.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Identity;
 using SubastaYa.API.Adapters;
-using SubastaYa.Application.Abstractions;
+
 using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Infrastructure.Repositories;
 using SubastaYa.Application.Features.Bids.Commands.PlaceBid;
@@ -27,6 +28,9 @@ using SubastaYa.Application.Features.Wallet.Queries;
 using SubastaYa.Application.Features.Auctions.Commands;
 using SubastaYa.Application.Features.Auctions.DTOs;
 using SubastaYa.Application.Features.Auctions.Queries;
+using SubastaYa.Application.Abstractions.Security;
+using SubastaYa.Application.Features.Auth;
+using SubastaYa.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,6 +43,22 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter());
     });
+builder.Services.AddScoped<IPasswordService, IdentityPasswordService>();
+
+builder.Services.AddScoped<
+    ICommandHandler<RegisterUserCommand, AuthResult>,
+    RegisterUserHandler>();
+
+builder.Services.AddScoped<
+    ICommandHandler<LoginUserCommand, AuthResult?>,
+    LoginUserHandler>();
+builder.Services.AddScoped<
+    IQueryHandler<GetUserProfileQuery, UserProfileResult?>,
+    GetUserProfileHandler>();
+
+builder.Services.AddScoped<
+    ICommandHandler<UpdateUserProfileCommand, UserProfileResult?>,
+    UpdateUserProfileHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -69,21 +89,26 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(
             builder.Configuration.GetConnectionString("DefaultConnection")),
     ServiceLifetime.Scoped);
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy
-            .WithOrigins(
-                "http://localhost:5500",
-                "http://127.0.0.1:5500")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
-    });
-});
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
 
+    builder.Services.AddCors(options =>
+    {
+         options.AddPolicy("Frontend", policy =>
+        {
+            if (allowedOrigins.Length > 0)
+            {
+            policy
+                .WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+            }
+          });
+    });
 builder.Services.AddScoped<IAuctionRepository, AuctionRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuctionNotifier, SignalRAuctionNotifier>();
 builder.Services.AddScoped<IQueryHandler<SearchAuctionsQuery, PagedAuctionResult>, SearchAuctionsQueryHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAuctionCategoriesQuery, IReadOnlyList<string>>, GetAuctionCategoriesQueryHandler>();
@@ -136,6 +161,10 @@ builder.Services.AddScoped<
     GetRoomStateQueryHandler>();
 
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services
+    .AddOptions<DevelopmentSeedOptions>()
+    .Bind(builder.Configuration.GetSection(
+        DevelopmentSeedOptions.SectionName));
 builder.Services.AddScoped<DevelopmentDataSeeder>();
 builder.Services
     .AddOptions<AuctionClosingWorkerOptions>()
@@ -169,8 +198,7 @@ if (app.Environment.IsDevelopment())
 
     using var scope = app.Services.CreateScope();
 
-    var dbContext =
-        scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
 
     var developmentAuthentication = scope.ServiceProvider
         .GetRequiredService<
