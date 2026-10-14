@@ -157,6 +157,10 @@ builder.Services.AddScoped<
     GetRoomStateQueryHandler>();
 
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services
+    .AddOptions<DevelopmentSeedOptions>()
+    .Bind(builder.Configuration.GetSection(
+        DevelopmentSeedOptions.SectionName));
 builder.Services.AddScoped<DevelopmentDataSeeder>();
 builder.Services
     .AddOptions<AuctionClosingWorkerOptions>()

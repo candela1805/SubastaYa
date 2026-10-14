@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-
+using Microsoft.Extensions.Options;
 using SubastaYa.Domain.Models;
 using SubastaYa.API.Services;
 using SubastaYa.API.Tests.TestInfrastructure;
@@ -135,6 +135,60 @@ public sealed class DevelopmentDataSeederTests
                 DevelopmentDataSeeder.ExpiredDesertedAuctionId)).Estado);
     }
 
+    [Fact]
+    public async Task Seed_uses_configured_password()
+    {
+        await using var db = CreateContext();
+
+        var password = Guid.NewGuid().ToString("N");
+        var hasher = new PasswordHasher<Usuario>();
+
+        var seeder = new DevelopmentDataSeeder(
+            db,
+            hasher,
+            new FixedTimeProvider(Now),
+            Options.Create(new DevelopmentSeedOptions
+            {
+                Password = password
+            }));
+
+        await seeder.SeedAsync("Usuario Demo", "demo@subastaya.com");
+
+        var users = await db.Usuarios.ToListAsync();
+
+        Assert.Equal(5, users.Count);
+
+        foreach (var user in users)
+        {
+            Assert.Equal(
+                PasswordVerificationResult.Success,
+                hasher.VerifyHashedPassword(
+                    user,
+                    user.PasswordHash,
+                    password));
+        }
+    }
+
+    [Fact]
+    public async Task Seed_without_password_fails_before_creating_data()
+    {
+        await using var db = CreateContext();
+
+        var seeder = new DevelopmentDataSeeder(
+            db,
+            new PasswordHasher<Usuario>(),
+            new FixedTimeProvider(Now),
+            Options.Create(new DevelopmentSeedOptions()));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => seeder.SeedAsync(
+                "Usuario Demo",
+                "demo@subastaya.com"));
+
+        Assert.False(await db.Usuarios.AnyAsync());
+        Assert.False(await db.Billeteras.AnyAsync());
+        Assert.False(await db.Subastas.AnyAsync());
+    }
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -146,11 +200,15 @@ public sealed class DevelopmentDataSeederTests
     }
 
     private static Task Seed(ApplicationDbContext db) =>
-        new DevelopmentDataSeeder(
-            db,
-            new PasswordHasher<Usuario>(),
-            new FixedTimeProvider(Now))
-        .SeedAsync("Usuario Demo", "demo@subastaya.com");
+    new DevelopmentDataSeeder(
+        db,
+        new PasswordHasher<Usuario>(),
+        new FixedTimeProvider(Now),
+        Options.Create(new DevelopmentSeedOptions
+        {
+            Password = Guid.NewGuid().ToString("N")
+        }))
+    .SeedAsync("Usuario Demo", "demo@subastaya.com");
 
     private static async Task AssertWallet(
         ApplicationDbContext db, Guid userId, decimal total,

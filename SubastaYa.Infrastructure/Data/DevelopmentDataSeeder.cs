@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SubastaYa.Domain.Models;
+using Microsoft.Extensions.Options;
 
 namespace SubastaYa.Infrastructure.Data;
 
@@ -19,19 +20,21 @@ public sealed class DevelopmentDataSeeder
     public static readonly Guid ExpiredWinnerAuctionId = Guid.Parse("60000000-0000-0000-0000-000000000004");
     public static readonly Guid ExpiredDesertedAuctionId = Guid.Parse("60000000-0000-0000-0000-000000000005");
 
-    private const string SeedPassword = "SubastaYa123!";
     private readonly ApplicationDbContext _db;
     private readonly IPasswordHasher<Usuario> _passwordHasher;
     private readonly TimeProvider _timeProvider;
+    private readonly DevelopmentSeedOptions _options;
 
     public DevelopmentDataSeeder(
         ApplicationDbContext db,
         IPasswordHasher<Usuario> passwordHasher,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOptions<DevelopmentSeedOptions> options)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _timeProvider = timeProvider;
+        _options = options.Value;
     }
 
     public async Task SeedAsync(
@@ -39,6 +42,11 @@ public sealed class DevelopmentDataSeeder
         string demoEmail,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(_options.Password))
+        {
+            throw new InvalidOperationException(
+                "Configurá DevelopmentSeed:Password mediante User Secrets antes de ejecutar el seed.");
+        }
         var now = _timeProvider.GetUtcNow();
         await using var transaction = await _db.Database.BeginTransactionAsync(
             cancellationToken);
@@ -121,7 +129,9 @@ public sealed class DevelopmentDataSeeder
             Email = email,
             FechaRegistro = now
         };
-        user.PasswordHash = _passwordHasher.HashPassword(user, SeedPassword);
+        user.PasswordHash = _passwordHasher.HashPassword(
+    user,
+    _options.Password);
         user.Billetera = Wallet(id, total, retained);
         _db.Usuarios.Add(user);
 
