@@ -52,17 +52,61 @@ public sealed class CloseAuctionCommandHandler : ICommandHandler<CloseAuctionCom
         try
         {
             var now = _timeProvider.GetUtcNow();
-            var auction = await _repository.GetAuctionAsync(command.AuctionId, cancellationToken);
-            if (auction is null || auction.FechaFinUtc > now) return await RollbackResult(command.AuctionId, AuctionClosingOutcome.Skipped);
-            if (auction.Estado != EstadoSubasta.Activa) return await RollbackResult(command.AuctionId, AuctionClosingOutcome.AlreadyProcessed);
-            if (await _repository.HasSettlementAsync(command.AuctionId, cancellationToken)) throw new InvalidOperationException($"La subasta {command.AuctionId} sigue activa pero ya posee una liquidación.");
-            var winners = await _repository.GetWinningBidsAsync(command.AuctionId, cancellationToken);
-            if (winners.Count > 1) throw new InvalidOperationException($"La subasta {command.AuctionId} tiene más de una puja ganadora.");
+
+            var auction = await _repository.GetAuctionAsync(
+                command.AuctionId,
+                cancellationToken);
+
+            if (auction is null)
+            {
+                return await RollbackResult(
+                    command.AuctionId,
+                    AuctionClosingOutcome.Skipped);
+            }
+
+            var eligibility = AuctionClosingRules.EvaluarEstado(auction, now);
+
+            if (eligibility == AuctionClosingEligibility.NotDue)
+            {
+                return await RollbackResult(
+                    command.AuctionId,
+                    AuctionClosingOutcome.Skipped);
+            }
+
+            if (eligibility == AuctionClosingEligibility.AlreadyProcessed)
+            {
+                return await RollbackResult(
+                    command.AuctionId,
+                    AuctionClosingOutcome.AlreadyProcessed);
+            }
+
+            var hasSettlement = await _repository.HasSettlementAsync(
+                command.AuctionId,
+                cancellationToken);
+
+            AuctionClosingRules.ValidarSinLiquidacion(
+                auction,
+                hasSettlement);
+
+            var winners = await _repository.GetWinningBidsAsync(
+                command.AuctionId,
+                cancellationToken);
+
+            AuctionClosingRules.ValidarCantidadGanadoras(
+                auction,
+                winners.Count);
+
             endDate = auction.FechaFinUtc;
             if (winners.Count == 0)
             {
-                if (await _repository.HasBidsAsync(command.AuctionId, cancellationToken)) throw new InvalidOperationException($"La subasta {command.AuctionId} tiene pujas pero ninguna ganadora.");
-                auction.Estado = EstadoSubasta.Desierta;
+                var hasBids = await _repository.HasBidsAsync(
+                    command.AuctionId,
+                    cancellationToken);
+
+                AuctionClosingRules.DeclararDesierta(
+                    auction,
+                    hasBids,
+                    now);
                 _repository.AddAudit(new AuditoriaLog { Id = Guid.NewGuid(), SubastaId = auction.Id, TipoEvento = "AuctionDeserted", Detalle = "Estado anterior: Activa; estado nuevo: Desierta; motivo: vencimiento sin ofertas; origen: AuctionStateWorker.", ClaveIdempotencia = $"{DesertedAuditPrefix}{auction.Id}", FechaUtc = now });
                 await _repository.SaveChangesAsync(cancellationToken); await _repository.CommitAsync(cancellationToken);
                 await _notifier.NotifyStateChangedAsync(auction.Id, auction.Estado, endDate, CancellationToken.None);
@@ -100,7 +144,7 @@ public sealed class CloseAuctionCommandHandler : ICommandHandler<CloseAuctionCom
                 FechaLiquidacionUtc = now
             };
 
-            auction.Estado = EstadoSubasta.Finalizada;
+            AuctionClosingRules.Finalizar(auction, now);
             _repository.AddSettlement(settlement);
             _repository.AddLedgerTransactions(
                 new TransaccionLedger { Id = Guid.NewGuid(), BilleteraId = buyer.Id, LiquidacionSubastaId = settlement.Id, ClaveIdempotencia = $"auction:settlement:payment:{auction.Id}", Tipo = TipoMovimientoBilletera.Pago, Monto = amount, Descripcion = $"Pago de la liquidación {settlement.Id} por la subasta {auction.Id}.", FechaUtc = now },
