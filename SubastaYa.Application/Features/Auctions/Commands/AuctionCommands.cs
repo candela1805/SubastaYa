@@ -254,19 +254,57 @@ public sealed class DeleteAuctionCommandHandler
     }
 }
 
-public sealed class ActivateAuctionCommandHandler : ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>
+public sealed class ActivateAuctionCommandHandler
+    : ICommandHandler<ActivateAuctionCommand, EstadoSubasta?>
 {
-    private readonly IAuctionRepository _repository; private readonly IAuctionNotifier _notifier; private readonly TimeProvider _timeProvider;
-    public ActivateAuctionCommandHandler(IAuctionRepository repository, IAuctionNotifier notifier, TimeProvider timeProvider) { _repository = repository; _notifier = notifier; _timeProvider = timeProvider; }
-    public async Task<EstadoSubasta?> HandleAsync(ActivateAuctionCommand command, CancellationToken cancellationToken = default)
+    private readonly IAuctionRepository _repository;
+    private readonly IAuctionNotifier _notifier;
+    private readonly TimeProvider _timeProvider;
+
+    public ActivateAuctionCommandHandler(
+        IAuctionRepository repository,
+        IAuctionNotifier notifier,
+        TimeProvider timeProvider)
     {
-        var auction = await _repository.GetTrackedAsync(command.AuctionId, cancellationToken) ?? throw new KeyNotFoundException("La subasta no existe.");
+        _repository = repository;
+        _notifier = notifier;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<EstadoSubasta?> HandleAsync(
+        ActivateAuctionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var auction = await _repository.GetTrackedAsync(
+            command.AuctionId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException("La subasta no existe.");
+
         var now = _timeProvider.GetUtcNow();
-        if (auction.Estado != EstadoSubasta.Programada || auction.FechaInicioUtc > now) return auction.Estado;
-        var previous = auction.Estado; auction.Estado = EstadoSubasta.Activa;
-        _repository.AddAudit(new AuditoriaLog { Id = Guid.NewGuid(), SubastaId = auction.Id, TipoEvento = "AuctionStateChanged", Detalle = $"Estado cambiado de {previous} a {auction.Estado}", FechaUtc = now });
+        var previous = auction.Estado;
+
+        if (!auction.ActivarSiCorresponde(now))
+        {
+            return auction.Estado;
+        }
+
+        _repository.AddAudit(new AuditoriaLog
+        {
+            Id = Guid.NewGuid(),
+            SubastaId = auction.Id,
+            TipoEvento = "AuctionStateChanged",
+            Detalle = $"Estado cambiado de {previous} a {auction.Estado}",
+            FechaUtc = now
+        });
+
         await _repository.SaveChangesAsync(cancellationToken);
-        await _notifier.NotifyStateChangedAsync(auction.Id, auction.Estado, auction.FechaFinUtc, CancellationToken.None);
+
+        await _notifier.NotifyStateChangedAsync(
+            auction.Id,
+            auction.Estado,
+            auction.FechaFinUtc,
+            CancellationToken.None);
+
         return auction.Estado;
     }
 }
